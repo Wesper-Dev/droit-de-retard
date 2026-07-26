@@ -238,7 +238,7 @@ Then, in another terminal:
 .venv/bin/python app.py
 ```
 
-Open `http://127.0.0.1:7860`, upload `billet_avion_fictif.pdf` and enter:
+Open `http://127.0.0.1:7865`, upload `billet_avion_fictif.pdf` and enter:
 
 ```text
 Le vol est arrivé avec 3 h 25 de retard.

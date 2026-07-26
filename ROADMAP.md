@@ -313,13 +313,13 @@ passe sans un mot.
 - [x] **`.github/workflows/tests.yml`** (badge à ajouter au README) — la suite tourne en 0,04 s,
       sans réseau ni Ollama ni dépendance. Matrice 3.10 → 3.13, ce qui tranche
       au passage l'affirmation jamais vérifiée du README. Un seul badge.
-- [ ] **Réconcilier les chiffres** — 32 tests annoncés dans `PLAN.md`,
-      `RAPPORT_*.md`, `SCRIPT_VIDEO_3MIN.md` ; 47 dans `README.md` ; réel : 47.
-      Port 7860 dans `AUDIT_UI.md`, `PLAN.md`, `SCRIPT_VIDEO.md` et surtout
-      `WRITEUP_KAGGLE.md` — le document anglais, donc celui que suit un lecteur
-      international — contre 7865 réel. La première commande du visiteur échoue
-      dans le document le mieux écrit du dépôt. Créer `docs/EVALUATION.md`
-      comme point de vérité unique, plus un test qui verrouille le compte.
+- [~] **Réconcilier les chiffres** — traité par le rangement : les documents
+      qui annonçaient 32 tests et le port 7860 sont désormais dans
+      `docs/hackathon/`, explicitement gelés, et le port du writeup a été
+      corrigé. Les documents vivants — `README.md`, `ROADMAP.md` — portent les
+      chiffres réels. **Reste à faire :** `docs/EVALUATION.md` comme point de
+      vérité unique et un test qui verrouille le compte, pour que la dérive
+      redevienne impossible plutôt que corrigée à la main.
 - [ ] **Section « Where to look »**, cinq lignes, permaliens figés, pointant
       `_validate_tool_call`, `_execute_research_tool`, `eu261.py` et les deux
       tests qui simulent un modèle tentant de lire `.env`. Dans un écosystème où
@@ -328,15 +328,13 @@ passe sans un mot.
 - [ ] **Une capture PNG** — zéro image dans 18 fichiers `.md`, pour un produit
       dont l'élément central est une trace visuelle. Plus le lien vidéo, absent
       du README. Plus `examples/sample_output.json` et `examples/sample_trace.json`.
-- [ ] **Ranger la racine** — `git mv` les artefacts d'événement dans
-      `docs/hackathon/`. `PLAN.md` affiche « 34/45, 76 % » et `AUDIT_UI.md`
-      « B3 reste ouvert » au-dessus du README : le visiteur conclut « inachevé »
-      sur un projet qui fonctionne de bout en bout. Supprimer `chat.py` et
-      `SERPAPI_AGENTS.md`. Déplacer `test_local.py` / `test_serpapi.py` vers
-      `scripts/` (aucun `TestCase` dedans, mais compter trois fichiers `test_*`
-      en lisant « 47 tests » fait soupçonner du remplissage).
-      **Attention :** déplacer `test_agent.py` dans `tests/` casse
-      `unittest discover` tel que documenté — trancher avant de commiter.
+- [x] **Ranger la racine** — douze artefacts d'événement archivés dans
+      `docs/hackathon/`, avec un `README.md` qui les déclare gelés et renvoie
+      vers l'état réel. `RAG_SPEC.md` et `COMPARAISON_CONCURRENTS.md` passés
+      dans `docs/` comme documents vivants. `test_local.py` et `test_serpapi.py`
+      renommés en `scripts/smoke_*.py`. `chat.py`, `SERPAPI_AGENTS.md` et le
+      `.pptx` supprimés. `test_agent.py` reste à la racine : le déplacer dans
+      `tests/` casserait `unittest discover` tel que documenté.
 - [ ] **Corriger `demo.sh`** — dépend de `rg` (ripgrep, non installé par
       défaut) sur un dépôt qui vend « zéro dépendance » ; `open` est macOS sous
       `set -euo pipefail` ; `.venv` exigé alors que le code est stdlib ;
@@ -345,8 +343,8 @@ passe sans un mot.
       meilleur document de présentation. **Supprimer la colonne « Commission
       0 % »** : annoncer 0 % en exigeant Ollama, 8 Go de modèle et un compte
       SerpApi payant est la phrase la plus attaquable du dépôt.
-- [ ] Décider du sort de `Droit_de_Retard_Pitch.pptx` — 66 Ko de binaire, seul
-      artefact dont la titularité est ambiguë (travail d'équipe).
+- [x] `Droit_de_Retard_Pitch.pptx` supprimé — binaire de 66 Ko, seul artefact
+      dont la titularité était ambiguë.
 
 ---
 

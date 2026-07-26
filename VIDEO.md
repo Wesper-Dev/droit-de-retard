@@ -35,7 +35,7 @@ Le vol est arrivé avec 3 h 25 de retard. La compagnie a évoqué un problème t
 ```
 
 Détails d'installation dans [`README.md`](README.md), architecture et choix de
-conception dans [`WRITEUP_KAGGLE.md`](WRITEUP_KAGGLE.md).
+conception dans [`docs/hackathon/WRITEUP_KAGGLE.md`](docs/hackathon/WRITEUP_KAGGLE.md).
 
 ## Avertissement
 

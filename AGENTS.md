@@ -12,7 +12,8 @@ This repository contains a local-first EU261 claim-preparation prototype.
 - `test_agent.py`: deterministic unit tests.
 - `billet_avion_fictif.pdf`: fictional demo input.
 - `knowledge/airline_policies/`: optional versioned airline-procedure corpus.
-- `PLAN.md`, `RAPPORT_AVANCEMENT.md`, and `DECOUPAGE_AGENTS.md`: status,
+- `ROADMAP.md`: audit findings, technical debt and planned work. Historical
+  hackathon documents live frozen in `docs/hackathon/`: status,
   priorities, ownership, and parallel work packages.
 
 Keep legal calculations in `eu261.py`; Gemma must extract or draft, never
@@ -49,9 +50,9 @@ confirmed before it affects routing.
 
 ## Agent Coordination & Review
 
-Read `PLAN.md` and `DECOUPAGE_AGENTS.md` before editing. Work only inside the
+Read `ROADMAP.md` before editing. Work only inside the
 assigned file set; the main agent owns core P0 files until the demo is frozen.
-External agents must not change `PLAN.md` or this guide. Contributions should
+External agents must not change this guide. Contributions should
 state files changed, commands run, observed results, assumptions, and remaining
 risks. Use short imperative commit subjects, for example
 `docs: add Kaggle writeup`.

@@ -10,7 +10,7 @@ import sys
 import urllib.parse
 import urllib.request
 
-from test_local import ask_gemma
+from smoke_ollama import ask_gemma
 
 QUESTION = "Quelles sont les dernières actualités sur le modèle Gemma de Google ?"
 SERPAPI_URL = "https://serpapi.com/search.json"

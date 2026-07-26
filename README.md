@@ -2,8 +2,7 @@
 
 [![tests](https://github.com/Wesper-Dev/droit-de-retard/actions/workflows/tests.yml/badge.svg)](https://github.com/Wesper-Dev/droit-de-retard/actions/workflows/tests.yml)
 
-Assistant local de préparation de réclamations aériennes EU261, présenté au
-**Gemma 4 Hackathon — Track 02: Autonomous Agents**.
+Assistant local de préparation de réclamations aériennes EU261.
 
 À partir d'un billet PDF ou image, le prototype extrait les faits avec Gemma 4,
 demande les informations manquantes, recherche des sources officielles et
@@ -65,6 +64,12 @@ seuils, de la distance, du montant et des branches de sécurité.
 | `app.py` | Serveur HTTP local sans dépendance Python externe |
 | `static/index.html` | Interface de démonstration |
 | `test_agent.py` | Tests déterministes |
+| `scripts/` | Vérifications manuelles, hors suite automatisée |
+| `docs/` | Spécifications et analyses maintenues |
+| `docs/hackathon/` | Archive figée de juillet 2026, non maintenue |
+
+L'état des travaux et la dette restante sont suivis dans
+[`ROADMAP.md`](ROADMAP.md).
 
 ## Prérequis
 
@@ -82,19 +87,18 @@ Le code d'exécution utilise uniquement la bibliothèque standard Python.
 Depuis un checkout du dépôt :
 
 ```bash
-cd Gemma4-hackathon
-python3 -m venv .venv
-source .venv/bin/activate
+git clone git@github.com:Wesper-Dev/droit-de-retard.git
+cd droit-de-retard
 
 ollama pull gemma4:12b
 ollama serve
 ```
 
-Dans un second terminal :
+Aucun environnement virtuel n'est nécessaire : le chemin d'exécution n'utilise
+que la bibliothèque standard. Dans un second terminal :
 
 ```bash
-cd Gemma4-hackathon
-source .venv/bin/activate
+cd droit-de-retard
 export DR_MODEL=gemma4:12b
 ```
 
@@ -116,7 +120,7 @@ ouvre le navigateur. Le lancement manuel reste disponible avec
 `.venv/bin/python app.py`.
 
 Ouvrez [http://127.0.0.1:7865](http://127.0.0.1:7865), chargez
-`billet_avion_fictif.pdf`, puis décrivez l'incident :
+`billet_avion_fictif.png`, puis décrivez l'incident :
 
 ```text
 Le vol est arrivé avec 3 h 25 de retard après un problème technique.
@@ -134,7 +138,7 @@ optionnelle : la saisie manuelle reste toujours disponible.
 ### Ligne de commande
 
 ```bash
-.venv/bin/python agent.py billet_avion_fictif.pdf \
+python3 agent.py billet_avion_fictif.png \
   --incident "Le vol est arrivé avec 3 h 25 de retard." \
   --booking-reference FQ7T2K
 ```
@@ -147,16 +151,16 @@ n'est pas renseigné, le résultat reste `needs_information` et l'agent pose la
 question ; il ne déduit pas un remboursement du seul retard. Aurora Airlines
 étant fictive, le prototype n'invente aucun formulaire réel.
 
-Lors d'une exécution en ligne validée, Gemma a produit les trois `tool_calls`,
-SerpApi a répondu, la qualification interne a pris le statut `likely` pour
-250 € potentiels et le pipeline a duré environ 51 secondes. Cette mesure décrit
-un passage sur la configuration de démonstration, pas une garantie de latence
-ou d'éligibilité.
+Lors d'une exécution en ligne validée, Gemma a produit les trois `tool_calls`
+sans qu'aucun soit rejeté, SerpApi a répondu, la qualification interne a pris le
+statut `likely` pour 250 € potentiels et le pipeline a duré environ 36 secondes.
+Cette mesure décrit un passage sur la configuration de démonstration, pas une
+garantie de latence ou d'éligibilité.
 
 ## Vérification
 
 ```bash
-.venv/bin/python -m unittest -v test_agent.py
+python3 -m unittest discover -v
 ```
 
 Les 101 tests couvrent le routage, la normalisation des durées, les seuils, les
@@ -185,15 +189,18 @@ une URL que le modèle aurait inventés sont corrigés ou signalés.
 ## Positionnement
 
 Ce projet prépare un dossier que l'utilisateur contrôle ; il n'effectue ni
-recouvrement ni action en justice. Contrairement aux services gérés à
-commission, il conserve localement le document et prélève **0 %** d'une
-éventuelle indemnité.
+recouvrement ni action en justice. Il ne prélève rien sur une éventuelle
+indemnité, mais ce n'est pas gratuit pour autant : il demande une machine
+capable de faire tourner un modèle de 12 milliards de paramètres, et le travail
+de suivi reste à la charge du voyageur. La comparaison ci-dessous porte sur les
+modèles, pas sur un rapport qualité-prix.
 
 | Critère | Droit de Retard | AirHelp | Flightright |
 | --- | --- | --- | --- |
 | Modèle | Libre-service local | Recouvrement géré | Recouvrement géré |
-| Commission annoncée | 0 % | 35 % TTC | 27 % + TVA |
-| Supplément juridique | Aucun service juridique | 15 % TTC | 14 % selon le dossier |
+| Prélèvement sur l'indemnité | Aucun | 35 % TTC | 27 % + TVA |
+| Coût réel pour l'utilisateur | Matériel, installation et suivi du dossier | Aucun si le dossier échoue | Aucun si le dossier échoue |
+| Relance et représentation | Non couvertes | Incluses | Incluses |
 | Trace et mode hors ligne | Visibles | Non revendiqués | Non revendiqués |
 
 Sources : [frais AirHelp](https://www.airhelp.com/en-int/our-fees/),
@@ -218,3 +225,16 @@ Ces services restent plus complets pour les relances et la représentation.
 - aucun envoi automatique de réclamation ;
 - corpus procédural local limité à trois compagnies : toute autre compagnie
   renvoie `not_found` plutôt qu'une procédure inventée.
+
+## Origine
+
+Ce projet est né au **Gemma 4 Hackathon — Track 02: Autonomous Agents**
+(juillet 2026). Les documents de cette période — writeup, pitch, plans,
+rapports et scripts vidéo — sont archivés tels quels dans
+[`docs/hackathon/`](docs/hackathon/) et ne sont plus maintenus : leurs chiffres
+décrivent l'état du projet à ce moment-là, pas l'état actuel.
+
+Le développement s'est poursuivi depuis. Voir [`ROADMAP.md`](ROADMAP.md) pour
+l'audit, la dette traitée et les travaux en cours.
+
+La vidéo de démonstration est référencée dans [`VIDEO.md`](VIDEO.md).
