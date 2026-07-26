@@ -25,6 +25,8 @@ from typing import Any
 
 from eu261 import assess_ticket_reimbursement, qualify_case
 from tools import (
+    OFFICIAL_RIGHTS_URL,
+    REGULATION_URL,
     RESEARCH_TOOL_DEFINITIONS,
     build_research_context,
     find_claim_channel,
@@ -117,12 +119,31 @@ CLAIM_SCHEMA: dict[str, Any] = {
         },
         "summary": {"type": "string"},
         "estimated_compensation_eur": NULLABLE_INTEGER,
-        "reasoning": {"type": "array", "items": {"type": "string"}},
+        # Chaque tableau est borné : sans maxItems, le décodage contraint laisse
+        # le modèle produire une liste infinie, ce qui tronque la réponse au
+        # milieu du JSON et se présente à tort comme un modèle défaillant.
+        "reasoning": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 8,
+        },
         "letter_subject": {"type": "string"},
         "letter_body": {"type": "string"},
-        "checklist": {"type": "array", "items": {"type": "string"}},
-        "warnings": {"type": "array", "items": {"type": "string"}},
-        "source_indices": {"type": "array", "items": {"type": "integer"}},
+        "checklist": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 12,
+        },
+        "warnings": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 6,
+        },
+        "source_indices": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "maxItems": 6,
+        },
     },
     "required": [
         "eligibility",
@@ -156,10 +177,19 @@ Tu ne fournis pas de conseil juridique et tu ne garantis jamais une indemnisatio
 Utilise uniquement les faits et sources fournis. Cite les sources avec [n].
 Les indices [n] désignent uniquement les sources juridiques de RECHERCHE :
 ne cite pas un indice après un fait venant du billet ou du voyageur.
-Si verified_live vaut false, eligibility doit être uncertain et
-estimated_compensation_eur doit être null. Ne transforme jamais une source de
-référence non vérifiée en règle confirmée. La lettre doit rester factuelle,
-polie, demander confirmation à la compagnie et ne contenir aucun fait inventé.
+estimated_compensation_eur doit reprendre exactement compensation_eur
+d'INDEMNISATION_EU261, ou null si ce droit n'est pas marqué likely ou
+conditional. N'écris aucun autre montant en euros dans la lettre, et ne cite
+aucune URL absente de RECHERCHE. Ne transforme jamais une source de référence
+non vérifiée en règle confirmée. La lettre doit rester factuelle, polie,
+demander confirmation à la compagnie et ne contenir aucun fait inventé.
+Si INDEMNISATION_EU261.cause_risk vaut high, indique que le transporteur pourra
+invoquer des circonstances extraordinaires et que la preuve lui incombe : ce
+n'est jamais un motif de renoncer à la demande. Si cause_risk vaut low, rappelle
+que la cause déclarée n'exonère en principe pas le transporteur.
+Si INDEMNISATION_EU261.status vaut not_covered, écris explicitement qu'une
+indemnisation forfaitaire est peut-être due mais que cet outil ne la chiffre
+pas, sans avancer le moindre montant.
 INDEMNISATION_EU261 et REMBOURSEMENT_BILLET sont deux décisions indépendantes :
 un refus d'indemnisation n'annule pas un remboursement indiqué likely ou
 conditional. La lettre ne demande que les droits marqués likely ou conditional.
@@ -892,16 +922,108 @@ def draft_claim(
             "format": CLAIM_SCHEMA,
             "stream": False,
             "think": False,
-            "options": {"temperature": 0},
+            # Une lettre complète plus sa checklist dépassent la fenêtre par
+            # défaut : sans cela, Ollama tronque la réponse au milieu du JSON et
+            # l'échec se présente comme un modèle défaillant.
+            "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 2048},
             "keep_alive": "10m",
         }
     )
     duration = time.perf_counter() - started
+    if response.get("done_reason") == "length":
+        raise AgentError(
+            "La rédaction a été tronquée par la limite de génération. "
+            "Le dossier n'est pas exploitable ; relance l'analyse."
+        )
     try:
         claim = json.loads(response["message"]["content"])
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise AgentError("Gemma n'a pas produit un dossier JSON exploitable.") from exc
     return claim, duration
+
+
+_EURO_AMOUNT = re.compile(r"(\d[\d\s .,]*)\s*(?:€|EUR\b|euros?\b)", re.IGNORECASE)
+_URL_IN_TEXT = re.compile(r"https?://[^\s<>\"'\)\],;]+")
+
+
+def _allowed_claim_urls(research: dict[str, Any]) -> set[str]:
+    """URLs que la lettre a le droit de citer : celles réellement récupérées."""
+    allowed: set[str] = {OFFICIAL_RIGHTS_URL, REGULATION_URL}
+    rights = research.get("rights") or {}
+    for source in rights.get("sources") or []:
+        if isinstance(source, dict) and source.get("link"):
+            allowed.add(source["link"])
+    channel = research.get("claim_channel") or {}
+    if channel.get("channel"):
+        allowed.add(channel["channel"])
+    for entry in channel.get("results") or []:
+        if isinstance(entry, dict) and entry.get("link"):
+            allowed.add(entry["link"])
+    policy = research.get("airline_policy") or {}
+    for procedure in policy.get("procedures") or []:
+        if procedure.get("channel_url"):
+            allowed.add(procedure["channel_url"])
+        for source in procedure.get("sources") or []:
+            if isinstance(source, dict) and source.get("link"):
+                allowed.add(source["link"])
+    return allowed
+
+
+def _validate_claim(
+    claim: dict[str, Any],
+    research: dict[str, Any],
+    qualification: dict[str, Any],
+    reimbursement: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Recoupe la lettre produite par Gemma avec les décisions déterministes.
+
+    Le modèle rédige, il ne décide pas : tout montant et toute URL qu'il produit
+    doivent déjà exister côté Python, sinon ils sont corrigés ou signalés. C'est
+    le pendant, côté sortie, de la liste blanche appliquée aux appels d'outils.
+    """
+    violations: list[str] = []
+    claim = dict(claim)
+
+    engine_amount = qualification.get("compensation_eur")
+    claimable = qualification.get("status") in {"likely", "conditional"}
+    expected_amount = engine_amount if claimable else None
+    if claim.get("estimated_compensation_eur") != expected_amount:
+        violations.append(
+            f"montant annoncé {claim.get('estimated_compensation_eur')!r} "
+            f"remplacé par {expected_amount!r} issu du moteur"
+        )
+        claim["estimated_compensation_eur"] = expected_amount
+
+    allowed_amounts = {expected_amount} if expected_amount is not None else set()
+    if reimbursement.get("amount_eur"):
+        allowed_amounts.add(reimbursement["amount_eur"])
+    body = claim.get("letter_body") or ""
+    for raw in _EURO_AMOUNT.findall(body):
+        digits = re.sub(r"[^\d]", "", raw.split(",")[0].split(".")[0])
+        if not digits:
+            continue
+        if int(digits) not in allowed_amounts:
+            violations.append(
+                f"montant {digits} € cité dans la lettre hors des montants "
+                "calculés par le moteur"
+            )
+
+    allowed_urls = _allowed_claim_urls(research)
+    texts = [body, claim.get("letter_subject") or ""]
+    texts.extend(claim.get("checklist") or [])
+    for text in texts:
+        for url in _URL_IN_TEXT.findall(str(text)):
+            if url.rstrip(".") not in allowed_urls:
+                violations.append(f"URL non vérifiée citée dans la lettre : {url}")
+
+    if violations:
+        warnings = list(claim.get("warnings") or [])
+        warnings.append(
+            "Des éléments rédigés par le modèle ont été corrigés ou signalés "
+            "après recoupement avec le calcul déterministe."
+        )
+        claim["warnings"] = warnings
+    return claim, violations
 
 
 def process(
@@ -928,6 +1050,7 @@ def process(
         "qualification": None,
         "reimbursement": None,
         "refusal": None,
+        "uncovered_right": None,
         "claim": None,
         "trace": [
             {
@@ -952,14 +1075,13 @@ def process(
     research, tool_trace = research_case(extracted)
     result["research"] = research
     result["trace"].extend(tool_trace)
+    source_reachable = bool(research["rights"].get("reference_source_reachable"))
     qualification = qualify_case(
-        extracted,
-        verified_live=bool(research["rights"].get("verified_live")),
+        extracted, reference_source_reachable=source_reachable
     )
     result["qualification"] = qualification
     reimbursement = assess_ticket_reimbursement(
-        extracted,
-        verified_live=bool(research["rights"].get("verified_live")),
+        extracted, reference_source_reachable=source_reachable
     )
     result["reimbursement"] = reimbursement
     result["trace"].append(
@@ -1023,6 +1145,45 @@ def process(
             "questions": [],
             "next_tool": None,
         }
+    if qualification["status"] == "not_covered":
+        # Le moteur ne sait pas chiffrer ce cas. On ne le maquille pas en
+        # information manquante : le passager doit savoir qu'un droit existe
+        # peut-être et que cet outil ne le calcule pas.
+        result["uncovered_right"] = {
+            "title": "Un droit possible n'est pas calculé par cet outil",
+            "explanation": qualification["reason"],
+            "disruption_type": qualification.get("uncovered_disruption"),
+        }
+        result["trace"].append(
+            {
+                "step": "flag_uncovered_right",
+                "state": "DROIT_NON_COUVERT",
+                "tool": "deterministic_rules",
+                "duration_seconds": 0,
+                "outcome": "not_covered",
+                "details": qualification["reason"],
+            }
+        )
+        if not reimbursement_actionable:
+            result["decision"] = {
+                "status": "not_covered",
+                "message": (
+                    "Cet outil ne calcule pas encore l'indemnisation pour ce "
+                    "type d'incident et ne génère donc aucune lettre."
+                ),
+                "questions": [],
+                "next_tool": None,
+            }
+            return result
+        result["decision"] = {
+            "status": "ready_for_claim",
+            "message": (
+                "Le remboursement du billet peut être demandé. L'indemnisation "
+                "forfaitaire éventuelle n'est pas chiffrée par cet outil."
+            ),
+            "questions": [],
+            "next_tool": None,
+        }
     if qualification["status"] == "needs_information" and not reimbursement_actionable:
         result["decision"] = {
             "status": "needs_information",
@@ -1050,7 +1211,20 @@ def process(
         qualification,
         reimbursement,
     )
+    claim, claim_violations = _validate_claim(
+        claim, research, qualification, reimbursement
+    )
     result["claim"] = claim
+    result["trace"].append(
+        {
+            "step": "validate_claim",
+            "state": "VALIDATION_LETTRE",
+            "tool": "deterministic_rules",
+            "duration_seconds": 0,
+            "outcome": "corrected" if claim_violations else "ok",
+            "details": " ; ".join(claim_violations) or None,
+        }
+    )
     if result["decision"]["status"] == "ready_for_research":
         result["decision"] = {
             "status": "ready_for_claim",

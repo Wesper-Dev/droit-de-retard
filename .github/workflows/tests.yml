@@ -1,0 +1,60 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Le README annonce « Python 3.10 ou supérieur » : la matrice le vérifie
+        # au lieu de l'affirmer.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Aucune étape d'installation : le chemin d'exécution n'utilise que la
+      # bibliothèque standard. Si une dépendance apparaît un jour, ce job casse,
+      # et c'est le comportement voulu.
+      - name: Suite déterministe
+        run: python -m unittest discover -v
+
+      - name: Vérifier l'absence de dépendance externe
+        run: |
+          python - <<'PY'
+          import ast, pathlib, sys
+
+          STDLIB = set(sys.stdlib_module_names)
+          # Tout module du dépôt est local : on ne code aucune liste en dur,
+          # sinon le contrôle casse au premier fichier ajouté.
+          LOCAL = {path.stem for path in pathlib.Path().rglob("*.py")}
+          faulty = []
+          for path in sorted(pathlib.Path().glob("*.py")):
+              tree = ast.parse(path.read_text(encoding="utf-8"))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      names = [alias.name for alias in node.names]
+                  elif isinstance(node, ast.ImportFrom):
+                      names = [node.module or ""]
+                  else:
+                      continue
+                  for name in names:
+                      root = name.split(".")[0]
+                      if root and root not in STDLIB and root not in LOCAL:
+                          faulty.append(f"{path}:{node.lineno} -> {name}")
+          if faulty:
+              print("Dépendance externe détectée sur le chemin d'exécution :")
+              print("\n".join(faulty))
+              raise SystemExit(1)
+          print("Aucune dépendance externe. Contrainte respectée.")
+          PY

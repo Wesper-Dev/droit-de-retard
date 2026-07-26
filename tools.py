@@ -296,7 +296,7 @@ def verify_air_passenger_rule(extracted: dict[str, Any]) -> dict[str, Any]:
         return {
             "status": "offline",
             "reason": str(exc),
-            "verified_live": False,
+            "reference_source_reachable": False,
             "sources": [
                 {
                     "title": "Droits des passagers aériens - Your Europe",
@@ -319,7 +319,7 @@ def verify_air_passenger_rule(extracted: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": "online",
         "reason": None,
-        "verified_live": True,
+        "reference_source_reachable": True,
         "sources": sources,
     }
 

@@ -217,6 +217,8 @@
     demo_carrier: ["Compagnie de démonstration", "neutral"],
     found: ["Fiche locale trouvée", ""],
     not_found: ["Aucune fiche locale", "neutral"],
+    not_covered: ["Droit non calculé par cet outil", "warn"],
+    corrected: ["Lettre corrigée après recoupement", "warn"],
     ok: ["Terminé", ""]
   }[status] || [String(status || "État inconnu"), "neutral"]);
 
@@ -426,7 +428,28 @@
         }`
       ));
       qualification.append(element("p", data.qualification.reason, "note"));
+      const risk = data.qualification.cause_risk;
+      if (risk && risk !== "unknown") {
+        qualification.append(element(
+          "span",
+          risk === "high"
+            ? "Cause possiblement extraordinaire"
+            : "Cause imputable au transporteur",
+          `badge ${risk === "high" ? "warn" : ""}`
+        ));
+      }
+      if (data.qualification.cause_note) {
+        qualification.append(element("p", data.qualification.cause_note, "note"));
+      }
       result.append(qualification);
+    }
+
+    if (data.uncovered_right) {
+      const uncovered = element("div", null, "section");
+      uncovered.append(element("h3", data.uncovered_right.title));
+      uncovered.append(element("span", "Non calculé", "badge warn"));
+      uncovered.append(element("p", data.uncovered_right.explanation, "note"));
+      result.append(uncovered);
     }
 
     if (data.reimbursement) {

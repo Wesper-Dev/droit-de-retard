@@ -1,0 +1,74 @@
+Droit de Retard
+Copyright 2026 Arnaud Duran
+
+This product includes software developed by Arnaud Duran, licensed under the
+Apache License, Version 2.0. See the LICENSE file.
+
+--------------------------------------------------------------------------------
+Third-party components and models
+--------------------------------------------------------------------------------
+
+This repository contains NO third-party source code: the runtime uses only the
+Python standard library. The components below are external dependencies that a
+user installs and runs themselves. They are NOT redistributed here, and they are
+NOT covered by the Apache License above.
+
+1. Gemma (Google)
+
+   The application sends prompts to a Gemma model served locally by Ollama.
+   Gemma is not open source and is not licensed under Apache-2.0. Its use is
+   governed by the Gemma Terms of Use and the Gemma Prohibited Use Policy:
+
+       https://ai.google.dev/gemma/terms
+       https://ai.google.dev/gemma/prohibited_use_policy
+
+   Those terms include a flow-down obligation: anyone who redistributes Gemma,
+   or a model derived from it, must pass the same use restrictions on to their
+   own recipients. This project distributes neither Gemma nor any derivative of
+   it — it only calls a model that the user has obtained and installed. Anyone
+   deploying this project for others remains responsible for complying with
+   those terms.
+
+2. Ollama
+
+   Model runtime, MIT License. https://github.com/ollama/ollama
+
+3. SerpApi (optional)
+
+   Live rule verification and claim-channel lookup use the SerpApi service when
+   a key is configured. Commercial service under its own terms; no key is
+   distributed with this repository. Without a key, the application degrades to
+   an explicit offline mode rather than failing.
+
+4. FFmpeg (optional)
+
+   Used to convert browser audio recordings and WEBP documents before they are
+   passed to the model. LGPL/GPL depending on build; invoked as an external
+   process, never linked or redistributed.
+
+5. Poppler (optional)
+
+   Used via `pdftoppm` to render the first page of a PDF. GPL-2.0; invoked as an
+   external process, never linked or redistributed.
+
+--------------------------------------------------------------------------------
+Reference data
+--------------------------------------------------------------------------------
+
+Files under `knowledge/airline_policies/` summarise publicly documented claim
+procedures. Each record carries the official source URL and a verification date.
+They are short factual summaries, not copies of the source pages. Airline names
+and trademarks belong to their respective owners and are used here only to
+identify the procedure being described.
+
+The demonstration document `billet_avion_fictif.*` is fictitious. "Aurora
+Airlines" is an invented carrier and does not designate any real company.
+
+--------------------------------------------------------------------------------
+Scope disclaimer
+--------------------------------------------------------------------------------
+
+This software prepares an informational claim file. It does not provide legal
+advice, does not represent the passenger, and guarantees no compensation. The
+EU261 rules implemented here are deliberately simplified and do not replace a
+legal analysis.

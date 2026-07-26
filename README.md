@@ -1,5 +1,7 @@
 # Droit de Retard
 
+[![tests](https://github.com/Wesper-Dev/droit-de-retard/actions/workflows/tests.yml/badge.svg)](https://github.com/Wesper-Dev/droit-de-retard/actions/workflows/tests.yml)
+
 Assistant local de préparation de réclamations aériennes EU261, présenté au
 **Gemma 4 Hackathon — Track 02: Autonomous Agents**.
 
@@ -156,7 +158,7 @@ ou d'éligibilité.
 .venv/bin/python -m unittest -v test_agent.py
 ```
 
-Les 47 tests couvrent le routage, la normalisation des durées, les seuils, les
+Les 63 tests couvrent le routage, la normalisation des durées, les seuils, les
 tranches de distance, le remboursement séparé et la confidentialité des
 recherches. Ils vérifient également les schémas d'outils, le parsing de
 `tool_calls`, le retour `role=tool`, le rejet des fonctions ou arguments hors

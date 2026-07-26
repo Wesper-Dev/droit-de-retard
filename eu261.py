@@ -136,8 +136,69 @@ def compensation_amount(distance_km: float, intra_eu: bool) -> int:
     return 600
 
 
+# Classification de la cause déclarée. L'ordre compte : un motif spécifique est
+# testé avant un motif générique, « grève des contrôleurs aériens » ne devant pas
+# être confondu avec « grève du personnel de la compagnie ».
+#
+# `low` signifie « imputable au transporteur selon la jurisprudence », donc sans
+# effet exonératoire :
+#   - problème technique : CJUE Wallentin-Hermann, C-549/07 ;
+#   - grève du personnel propre : CJUE Krüsemann e.a., C-195/17.
+# `high` signale une circonstance potentiellement extraordinaire au sens de
+# l'art. 5(3). Ce n'est JAMAIS un refus : la charge de la preuve pèse sur le
+# transporteur, pas sur le passager.
+CAUSE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "low",
+        (
+            "probleme technique", "probleme mecanique", "panne", "maintenance",
+            "defaut technique", "incident technique", "technical", "mechanical",
+            "greve du personnel", "greve des salaries", "greve interne",
+            "greve de la compagnie", "greve des pilotes", "greve des hotesses",
+            "surbooking", "surreservation", "overbooking",
+        ),
+    ),
+    (
+        "high",
+        (
+            "meteo", "meteorologique", "tempete", "orage", "neige", "verglas",
+            "brouillard", "vent violent", "cyclone", "ouragan", "weather",
+            "storm", "fog", "snow",
+            "greve des controleurs", "greve du controle aerien", "greve atc",
+            "controle aerien", "air traffic control",
+            "collision aviaire", "peril aviaire", "bird strike",
+            "volcan", "cendres", "espace aerien ferme", "fermeture de l espace",
+            "sureté", "surete", "securite aeroportuaire", "menace",
+            "instabilite politique", "guerre",
+        ),
+    ),
+)
+
+
+def _fold(value: str) -> str:
+    """Minuscule sans accents, pour comparer une cause libre à des motifs."""
+    lowered = value.casefold()
+    replacements = {
+        "à": "a", "â": "a", "ä": "a", "é": "e", "è": "e", "ê": "e", "ë": "e",
+        "î": "i", "ï": "i", "ô": "o", "ö": "o", "ù": "u", "û": "u", "ü": "u",
+        "ç": "c",
+    }
+    return "".join(replacements.get(char, char) for char in lowered)
+
+
+def classify_cause(cause: str | None) -> str:
+    """Range une cause déclarée en low, high ou unknown."""
+    if not isinstance(cause, str) or not cause.strip():
+        return "unknown"
+    folded = _fold(cause)
+    for risk, patterns in CAUSE_PATTERNS:
+        if any(pattern in folded for pattern in patterns):
+            return risk
+    return "unknown"
+
+
 def qualify_delay(
-    extracted: dict[str, Any], *, verified_live: bool = False
+    extracted: dict[str, Any], *, reference_source_reachable: bool = False
 ) -> dict[str, Any]:
     """Qualifie un retard à l'arrivée sans déléguer le calcul au modèle."""
     origin = extract_iata(extracted.get("origin"))
@@ -198,8 +259,24 @@ def qualify_delay(
 
     intra_eu = departure_eu and arrival_eu
     amount = compensation_amount(distance, intra_eu)
+    cause_risk = classify_cause(extracted.get("disruption_cause"))
+    cause_note = {
+        "high": (
+            "La cause déclarée peut relever des circonstances extraordinaires "
+            "de l'art. 5(3). Le transporteur devra le prouver ; la demande "
+            "reste légitime."
+        ),
+        "low": (
+            "La cause déclarée est en principe imputable au transporteur et "
+            "n'exonère pas de l'indemnisation."
+        ),
+        "unknown": "La cause n'est pas renseignée ; elle sera à préciser.",
+    }[cause_risk]
     return {
-        "status": "likely" if verified_live else "conditional",
+        # Le statut dépend de la cause déclarée, jamais de la joignabilité d'une
+        # source en ligne : celle-ci est une information de provenance, pas un
+        # élément de qualification juridique.
+        "status": "conditional" if cause_risk == "high" else "likely",
         "right_type": "eu261_compensation",
         "reason": (
             "Le seuil de retard et la distance sont satisfaits, sous réserve "
@@ -207,6 +284,9 @@ def qualify_delay(
         ),
         "distance_km": round(distance, 1),
         "compensation_eur": amount,
+        "cause_risk": cause_risk,
+        "cause_note": cause_note,
+        "reference_source_reachable": reference_source_reachable,
         "rule": (
             f"Retard à l'arrivée >= 3 h ; tranche de distance donnant {amount} €."
         ),
@@ -215,13 +295,16 @@ def qualify_delay(
 
 
 def assess_ticket_reimbursement(
-    extracted: dict[str, Any], *, verified_live: bool = False
+    extracted: dict[str, Any], *, reference_source_reachable: bool = False
 ) -> dict[str, Any]:
     """Évalue séparément le remboursement du billet pour un retard au départ."""
     disruption = extracted.get("disruption_type")
     if disruption == "cancellation":
         return {
-            "status": "likely" if verified_live else "conditional",
+            # Le droit au remboursement ou réacheminement de l'art. 8 s'applique
+            # quelle que soit la cause : une circonstance extraordinaire exonère
+            # de l'indemnisation, pas de la prise en charge.
+            "status": "likely",
             "right_type": "ticket_reimbursement",
             "reason": (
                 "En cas d'annulation, le passager doit pouvoir choisir entre "
@@ -296,7 +379,9 @@ def assess_ticket_reimbursement(
             "ruleset": RULESET,
         }
     return {
-        "status": "likely" if verified_live else "conditional",
+        # Comme pour l'annulation, ce droit ne dépend pas de la cause ni de la
+        # joignabilité d'une source en ligne.
+        "status": "likely",
         "right_type": "ticket_reimbursement",
         "reason": (
             "Le retard déclaré au départ atteint 5 heures et le passager a "
@@ -309,18 +394,51 @@ def assess_ticket_reimbursement(
     }
 
 
+# Droits que le règlement ouvre mais que ce moteur ne calcule pas encore. Les
+# distinguer d'un `needs_information` est essentiel : aucune information
+# supplémentaire du passager ne débloquerait ces cas, c'est l'implémentation qui
+# manque. Les confondre laisserait croire que le dossier est complet.
+UNCOVERED_CASES = {
+    "cancellation": (
+        "L'annulation ouvre en principe une indemnisation forfaitaire au titre "
+        "des art. 5(1)(c) et 7, en plus du remboursement ou du réacheminement. "
+        "Ce moteur ne la calcule pas encore : le montant n'est ni chiffré, ni "
+        "demandé dans la lettre."
+    ),
+    "denied_boarding": (
+        "Le refus d'embarquement involontaire ouvre en principe une "
+        "indemnisation au titre de l'art. 4. Ce moteur ne la calcule pas "
+        "encore : le montant n'est ni chiffré, ni demandé dans la lettre."
+    ),
+    "missed_connection": (
+        "Une correspondance manquée s'apprécie sur le retard à l'arrivée finale. "
+        "Ce moteur ne traite pas encore ce cas de façon distincte."
+    ),
+}
+
+
 def qualify_case(
-    extracted: dict[str, Any], *, verified_live: bool = False
+    extracted: dict[str, Any], *, reference_source_reachable: bool = False
 ) -> dict[str, Any]:
     """Route vers la qualification déterministe disponible."""
     disruption = extracted.get("disruption_type")
     if disruption == "delay":
-        return qualify_delay(extracted, verified_live=verified_live)
+        return qualify_delay(
+            extracted, reference_source_reachable=reference_source_reachable
+        )
+    if disruption in UNCOVERED_CASES:
+        return {
+            "status": "not_covered",
+            "right_type": "eu261_compensation",
+            "reason": UNCOVERED_CASES[disruption],
+            "uncovered_disruption": disruption,
+            "ruleset": RULESET,
+        }
     return {
         "status": "needs_information",
         "reason": (
-            "Le prototype déterministe couvre pour l'instant uniquement les "
-            "retards à l'arrivée."
+            "Le type d'incident n'est pas renseigné : précise s'il s'agit d'un "
+            "retard, d'une annulation ou d'un refus d'embarquement."
         ),
         "ruleset": RULESET,
     }

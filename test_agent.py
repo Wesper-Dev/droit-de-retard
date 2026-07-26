@@ -8,6 +8,9 @@ import wave
 
 from agent import (
     AgentError,
+    CLAIM_SCHEMA,
+    _validate_claim,
+    draft_claim,
     merge_incident_statement,
     process,
     research_case,
@@ -17,8 +20,10 @@ from agent import (
 from eu261 import (
     AIRPORTS,
     assess_ticket_reimbursement,
+    classify_cause,
     compensation_amount,
     compute_distance,
+    qualify_case,
     qualify_delay,
 )
 from tools import (
@@ -242,7 +247,7 @@ class RouteCaseTests(unittest.TestCase):
         )
         research_case_mock.return_value = (
             {
-                "rights": {"verified_live": True},
+                "rights": {"reference_source_reachable": True},
                 "claim_channel": {"status": "demo_carrier"},
             },
             [],
@@ -282,7 +287,7 @@ class RouteCaseTests(unittest.TestCase):
         )
         research_case_mock.return_value = (
             {
-                "rights": {"verified_live": True},
+                "rights": {"reference_source_reachable": True},
                 "claim_channel": {"status": "demo_carrier"},
                 "airline_policy": {"status": "not_found"},
             },
@@ -323,7 +328,7 @@ class RouteCaseTests(unittest.TestCase):
         )
         research_case_mock.return_value = (
             {
-                "rights": {"verified_live": True},
+                "rights": {"reference_source_reachable": True},
                 "claim_channel": {"status": "demo_carrier"},
                 "airline_policy": {"status": "not_found"},
             },
@@ -357,7 +362,7 @@ class RouteCaseTests(unittest.TestCase):
         )
         research_case_mock.return_value = (
             {
-                "rights": {"verified_live": True},
+                "rights": {"reference_source_reachable": True},
                 "claim_channel": {"status": "demo_carrier"},
             },
             [],
@@ -419,7 +424,7 @@ class RouteCaseTests(unittest.TestCase):
                 "disruption_type": "delay",
                 "departure_delay_minutes": 310,
             },
-            verified_live=True,
+            reference_source_reachable=True,
         )
 
         self.assertEqual(assessment["status"], "needs_information")
@@ -432,7 +437,7 @@ class RouteCaseTests(unittest.TestCase):
                 "departure_delay_minutes": 310,
                 "trip_completed": False,
             },
-            verified_live=True,
+            reference_source_reachable=True,
         )
 
         self.assertEqual(assessment["status"], "likely")
@@ -458,7 +463,7 @@ class RouteCaseTests(unittest.TestCase):
         )
         research_case_mock.return_value = (
             {
-                "rights": {"verified_live": True},
+                "rights": {"reference_source_reachable": True},
                 "claim_channel": {"status": "demo_carrier"},
             },
             [],
@@ -505,7 +510,7 @@ class NativeToolCallingTests(unittest.TestCase):
         }
         self.rights = {
             "status": "online",
-            "verified_live": True,
+            "reference_source_reachable": True,
             "reason": None,
             "sources": [],
         }
@@ -763,7 +768,7 @@ class NativeToolCallingTests(unittest.TestCase):
         result = verify_air_passenger_rule(self.extracted)
 
         self.assertEqual(result["status"], "offline")
-        self.assertFalse(result["verified_live"])
+        self.assertFalse(result["reference_source_reachable"])
         self.assertEqual(len(result["sources"]), 2)
 
     @patch(
@@ -790,9 +795,249 @@ class NativeToolCallingTests(unittest.TestCase):
         result = verify_air_passenger_rule(self.extracted)
 
         self.assertEqual(result["status"], "online")
-        self.assertTrue(result["verified_live"])
+        self.assertTrue(result["reference_source_reachable"])
         self.assertEqual(len(result["sources"]), 1)
         self.assertIn("passenger-rights/air", result["sources"][0]["link"])
+
+
+class VerdictIntegrityTests(unittest.TestCase):
+    """Le verdict ne doit dépendre que des faits, jamais du réseau."""
+
+    BASE = {
+        "origin": "Paris CDG",
+        "destination": "Lisbonne LIS",
+        "disruption_type": "delay",
+        "arrival_delay_minutes": 205,
+    }
+
+    def test_status_does_not_depend_on_source_reachability(self):
+        offline = qualify_delay(self.BASE, reference_source_reachable=False)
+        online = qualify_delay(self.BASE, reference_source_reachable=True)
+
+        self.assertEqual(offline["status"], online["status"])
+        self.assertEqual(offline["compensation_eur"], online["compensation_eur"])
+        # La joignabilité reste exposée, mais comme provenance seulement.
+        self.assertFalse(offline["reference_source_reachable"])
+        self.assertTrue(online["reference_source_reachable"])
+
+    def test_extraordinary_cause_downgrades_without_refusing(self):
+        result = qualify_delay({**self.BASE, "disruption_cause": "tempête de neige"})
+
+        self.assertEqual(result["cause_risk"], "high")
+        self.assertEqual(result["status"], "conditional")
+        # Le droit reste chiffré : la charge de la preuve pèse sur le transporteur.
+        self.assertEqual(result["compensation_eur"], 250)
+
+    def test_technical_cause_is_not_extraordinary(self):
+        """CJUE Wallentin-Hermann C-549/07."""
+        result = qualify_delay({**self.BASE, "disruption_cause": "problème technique"})
+
+        self.assertEqual(result["cause_risk"], "low")
+        self.assertEqual(result["status"], "likely")
+
+    def test_own_staff_strike_is_not_extraordinary(self):
+        """CJUE Krüsemann C-195/17 : la grève interne n'exonère pas."""
+        self.assertEqual(
+            classify_cause("grève du personnel de la compagnie"), "low"
+        )
+        # Mais une grève du contrôle aérien est bien externe au transporteur.
+        self.assertEqual(classify_cause("grève des contrôleurs aériens"), "high")
+
+    def test_unknown_cause_stays_neutral(self):
+        for cause in (None, "", "   "):
+            self.assertEqual(classify_cause(cause), "unknown")
+
+
+class UncoveredRightTests(unittest.TestCase):
+    """Un cas non implémenté ne doit pas se déguiser en information manquante."""
+
+    def test_cancellation_is_flagged_as_not_covered(self):
+        result = qualify_case({"disruption_type": "cancellation"})
+
+        self.assertEqual(result["status"], "not_covered")
+        self.assertEqual(result["uncovered_disruption"], "cancellation")
+        self.assertIn("art. 5(1)(c)", result["reason"])
+
+    def test_denied_boarding_is_flagged_as_not_covered(self):
+        result = qualify_case({"disruption_type": "denied_boarding"})
+
+        self.assertEqual(result["status"], "not_covered")
+        self.assertIn("art. 4", result["reason"])
+
+    def test_missing_disruption_type_remains_needs_information(self):
+        result = qualify_case({"disruption_type": None})
+
+        self.assertEqual(result["status"], "needs_information")
+
+    @patch("agent.draft_claim")
+    @patch("agent.research_case")
+    @patch("agent.extract_flight")
+    def test_cancellation_surfaces_the_uncovered_right(
+        self, extract_flight, research_case_mock, draft_claim
+    ):
+        extract_flight.return_value = (
+            {
+                **COMPLETE_FLIGHT,
+                "airline": "Air France",
+                "disruption_type": "cancellation",
+                "delay_minutes": None,
+                "trip_completed": False,
+                "uncertain_fields": [],
+            },
+            1.0,
+        )
+        research_case_mock.return_value = (
+            {
+                "rights": {"reference_source_reachable": True, "sources": []},
+                "claim_channel": {"status": "demo_carrier"},
+                "airline_policy": {"status": "not_found"},
+            },
+            [],
+        )
+        draft_claim.return_value = (
+            {
+                "estimated_compensation_eur": None,
+                "letter_body": "Corps de lettre.",
+                "letter_subject": "Objet",
+                "checklist": [],
+                "warnings": [],
+            },
+            1.0,
+        )
+
+        result = process(__import__("pathlib").Path("unused.pdf"))
+
+        self.assertEqual(result["qualification"]["status"], "not_covered")
+        self.assertIsNotNone(result["uncovered_right"])
+        states = [step.get("state") for step in result["trace"]]
+        self.assertIn("DROIT_NON_COUVERT", states)
+
+
+class ClaimValidationTests(unittest.TestCase):
+    """La lettre rédigée par le modèle est recoupée avec le moteur."""
+
+    RESEARCH = {
+        "rights": {
+            "reference_source_reachable": True,
+            "sources": [{"link": "https://europa.eu/youreurope/x"}],
+        },
+        "claim_channel": {"status": "online", "channel": "https://exemple.test/form"},
+        "airline_policy": {"status": "not_found", "procedures": []},
+    }
+    QUALIFICATION = {"status": "likely", "compensation_eur": 250}
+    REIMBURSEMENT = {"status": "not_assessed", "amount_eur": None}
+
+    def test_wrong_amount_is_replaced_by_the_engine_value(self):
+        claim, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": 600,
+                "letter_body": "Je demande 250 €.",
+                "checklist": [],
+                "warnings": [],
+            },
+            self.RESEARCH,
+            self.QUALIFICATION,
+            self.REIMBURSEMENT,
+        )
+
+        self.assertEqual(claim["estimated_compensation_eur"], 250)
+        self.assertTrue(violations)
+        self.assertTrue(claim["warnings"])
+
+    def test_amount_invented_in_the_letter_body_is_reported(self):
+        _, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": 250,
+                "letter_body": "Je demande 600 € au titre du règlement.",
+                "checklist": [],
+                "warnings": [],
+            },
+            self.RESEARCH,
+            self.QUALIFICATION,
+            self.REIMBURSEMENT,
+        )
+
+        self.assertTrue(any("600" in violation for violation in violations))
+
+    def test_unverified_url_is_reported(self):
+        _, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": 250,
+                "letter_body": "Déposez sur https://www.airhelp.com/fr/",
+                "checklist": [],
+                "warnings": [],
+            },
+            self.RESEARCH,
+            self.QUALIFICATION,
+            self.REIMBURSEMENT,
+        )
+
+        self.assertTrue(any("airhelp" in violation for violation in violations))
+
+    def test_faithful_letter_passes_without_violation(self):
+        claim, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": 250,
+                "letter_body": (
+                    "Je demande 250 € en application du règlement, voir "
+                    "https://europa.eu/youreurope/x"
+                ),
+                "checklist": ["https://exemple.test/form"],
+                "warnings": [],
+            },
+            self.RESEARCH,
+            self.QUALIFICATION,
+            self.REIMBURSEMENT,
+        )
+
+        self.assertEqual(violations, [])
+        self.assertEqual(claim["warnings"], [])
+
+    def test_amount_is_cleared_when_the_right_is_not_claimable(self):
+        claim, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": 400,
+                "letter_body": "Corps neutre.",
+                "checklist": [],
+                "warnings": [],
+            },
+            self.RESEARCH,
+            {"status": "not_covered"},
+            self.REIMBURSEMENT,
+        )
+
+        self.assertIsNone(claim["estimated_compensation_eur"])
+        self.assertTrue(violations)
+
+
+class ClaimSchemaTests(unittest.TestCase):
+    def test_every_array_is_bounded(self):
+        """Un tableau sans maxItems laisse le décodage contraint boucler.
+
+        Constaté en conditions réelles : `source_indices` produisait
+        251, 252, 253… jusqu'à épuiser la limite de génération, tronquant le
+        JSON au milieu et faisant passer un défaut de schéma pour une
+        défaillance du modèle.
+        """
+        unbounded = [
+            name
+            for name, spec in CLAIM_SCHEMA["properties"].items()
+            if spec.get("type") == "array" and "maxItems" not in spec
+        ]
+
+        self.assertEqual(unbounded, [])
+
+    @patch("agent._chat")
+    def test_truncated_generation_is_reported_as_such(self, chat):
+        chat.return_value = {
+            "done_reason": "length",
+            "message": {"content": '{"eligibility": "lik'},
+        }
+
+        with self.assertRaises(AgentError) as raised:
+            draft_claim({}, {}, {}, {})
+
+        self.assertIn("tronquée", str(raised.exception))
 
 
 class AirportCoverageTests(unittest.TestCase):

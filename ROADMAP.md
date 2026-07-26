@@ -55,10 +55,10 @@ mérite une décision. Sinon elle est close.
 
 ## 3. Ce que le dépôt affirme et que son code contredit
 
-Priorité absolue. Tant que ces points sont là, la CI et les captures décorent
-un discours faux. Un lecteur technique les trouve en dix minutes de `grep`.
+**Statut : les quatre points sont CORRIGÉS** (26 juillet 2026, 63 tests).
+Conservés ici comme mémoire du problème et de la solution retenue.
 
-### 3.1 ✅ `verified_live` ne vérifie rien
+### 3.1 ~~`verified_live` ne vérifie rien~~ — corrigé
 
 `_filter_official_rule_sources` (`tools.py`) teste seulement que l'URL
 retournée par SerpApi *ressemble* à une page `europa.eu` — hostname, préfixe et
@@ -69,7 +69,7 @@ niveau de confiance juridique est branché sur un test de connectivité.
 *Correctif :* renommer en `reference_source_reachable`, le sortir du calcul de
 statut, propager dans l'UI et les tests. ~1 h.
 
-### 3.2 ✅ Le montant de la lettre n'est jamais recoupé
+### 3.2 ~~Le montant de la lettre n'est jamais recoupé~~ — corrigé
 
 `estimated_compensation_eur` n'apparaît que dans `CLAIM_SCHEMA` et
 `CLAIM_SYSTEM`. Aucune ligne ne le compare à `qualification["compensation_eur"]`.
@@ -80,7 +80,7 @@ l'utilisateur envoie.
 moteur, tout nombre suivi de `€` dans l'ensemble autorisé, URL en allow-list.
 C'est le pendant exact de `_validate_tool_call`. Une soirée.
 
-### 3.3 ✅ `disruption_cause` est extrait puis ignoré
+### 3.3 ~~`disruption_cause` est extrait puis ignoré~~ — corrigé
 
 Trois occurrences, toutes dans `agent.py` (schéma, liste des requis,
 affectation depuis la dictée). **Zéro dans `eu261.py`.** Un passager qui déclare
@@ -93,7 +93,7 @@ personnel propre (Krüsemann C-195/17) ; `unknown` par défaut. **Ne jamais
 transformer `high` en refus** : la charge de la preuve pèse sur le
 transporteur. Deux soirées avec les tests.
 
-### 3.4 ✅ Le moteur ne traite qu'un cas EU261 sur quatre
+### 3.4 ~~Le moteur ne traite qu'un cas EU261 sur quatre~~ — angle mort rendu explicite
 
 `qualify_case` ne route que `delay`. Le schéma d'extraction et le parseur de
 dictée annoncent pourtant quatre types d'incident.
@@ -107,6 +107,28 @@ le plus solide (art. 4).
 
 *Correctif immédiat (avant toute nouvelle branche) :* rendre l'angle mort
 explicite à l'écran plutôt que de laisser croire que le dossier est complet.
+
+**Fait.** `qualify_case` renvoie désormais un statut distinct `not_covered`,
+jamais confondu avec `needs_information` : aucune information supplémentaire du
+passager ne débloquerait ces cas, c'est l'implémentation qui manque. Le
+pipeline expose `uncovered_right`, trace un état `DROIT_NON_COUVERT`, et
+`CLAIM_SYSTEM` impose d'écrire qu'une indemnisation est peut-être due sans
+avancer de montant. Les branches annulation et refus d'embarquement restent à
+écrire (mois 3).
+
+### 3.5 ✅ Un tableau sans `maxItems` fait boucler le décodage contraint
+
+Découvert en corrigeant 3.3 : `source_indices` était déclaré
+`{"type": "array", "items": {"type": "integer"}}` **sans borne**. Le décodage
+contraint d'Ollama a produit `251, 252, 253… 283`, épuisant la limite de
+génération et tronquant le JSON au milieu. L'échec se présentait comme
+« Gemma n'a pas produit un dossier JSON exploitable » — un défaut de schéma
+déguisé en défaillance du modèle.
+
+*Corrigé :* `maxItems` sur les quatre tableaux de `CLAIM_SCHEMA`, plus une
+détection explicite de `done_reason == "length"` qui nomme la troncature au
+lieu de la masquer. Deux tests, dont un qui échoue si un futur tableau est
+ajouté sans borne.
 
 ---
 
@@ -233,10 +255,10 @@ passe sans un mot.
 
 - [x] Sortir les billets du dépôt, `.gitignore` en liste blanche médias
 - [x] Dépôt personnel `Wesper-Dev/droit-de-retard`, historique complet
-- [ ] **`LICENSE` Apache-2.0 + `NOTICE`** — sans licence, « tous droits
+- [x] **`LICENSE` Apache-2.0 + `NOTICE`** — sans licence, « tous droits
       réservés » : personne ne peut forker. Le `NOTICE` reprend les Gemma Terms
       of Use, le modèle n'étant pas sous Apache.
-- [ ] **`.github/workflows/tests.yml` + badge** — la suite tourne en 0,04 s,
+- [x] **`.github/workflows/tests.yml`** (badge à ajouter au README) — la suite tourne en 0,04 s,
       sans réseau ni Ollama ni dépendance. Matrice 3.10 → 3.13, ce qui tranche
       au passage l'affirmation jamais vérifiée du README. Un seul badge.
 - [ ] **Réconcilier les chiffres** — 32 tests annoncés dans `PLAN.md`,
