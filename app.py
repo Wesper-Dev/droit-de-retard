@@ -43,9 +43,35 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _local_host(self) -> bool:
+        """L'en-tête Host doit désigner la boucle locale.
+
+        Sans ce contrôle, un site tiers peut faire résoudre son propre nom vers
+        127.0.0.1 (DNS rebinding) et lire, depuis le navigateur de la victime,
+        l'extraction nominative que renvoie cette API.
+        """
+        host = (self.headers.get("Host") or "").split(":")[0].strip().lower()
+        return host in {"127.0.0.1", "localhost", "[::1]", "::1", ""}
+
     def do_POST(self) -> None:  # noqa: N802 - API imposée par BaseHTTPRequestHandler
         if self.path not in {"/api/analyze", "/api/transcribe"}:
             self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        if not self._local_host():
+            self._send_json(
+                HTTPStatus.FORBIDDEN,
+                {"error": "Cette API n'accepte que les appels locaux."},
+            )
+            return
+        # Exiger un Content-Type JSON force un préflight CORS sur toute requête
+        # venant d'une autre origine : un formulaire tiers ne peut donc plus
+        # déclencher une analyse, ni consommer le quota SerpApi et Ollama.
+        content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip()
+        if content_type.lower() != "application/json":
+            self._send_json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"error": "Content-Type attendu : application/json."},
+            )
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))

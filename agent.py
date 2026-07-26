@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.request
 import wave
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -1122,6 +1123,43 @@ def _validate_claim(
     return claim, violations
 
 
+def _pending_questions(*assessments: dict[str, Any]) -> list[str]:
+    """Toutes les questions ouvertes, dédupliquées et dans l'ordre d'apparition."""
+    questions: list[str] = []
+    for assessment in assessments:
+        if assessment.get("status") != "needs_information":
+            continue
+        question = assessment.get("question") or assessment.get("reason")
+        if question and question not in questions:
+            questions.append(question)
+    return questions
+
+
+def _implausible_date(extracted: dict[str, Any], today: date) -> str | None:
+    """Signale une date de vol qui ne peut pas correspondre à un incident passé."""
+    raw = extracted.get("departure_date")
+    if not isinstance(raw, str):
+        return None
+    try:
+        flight_day = date.fromisoformat(raw.strip())
+    except ValueError:
+        return None
+    if flight_day > today:
+        return (
+            f"La date de vol lue ({raw}) est dans le futur : un incident ne "
+            "peut pas encore avoir eu lieu. Vérifie la date avant d'envoyer."
+        )
+    # Le délai de prescription français de droit commun est de cinq ans ; on
+    # alerte au-delà de quatre sans jamais conclure à la prescription, qui
+    # dépend du pays compétent et de la date d'interruption.
+    if (today - flight_day).days > 4 * 365:
+        return (
+            f"La date de vol lue ({raw}) remonte à plus de quatre ans : le "
+            "délai pour agir est peut-être écoulé selon le pays compétent."
+        )
+    return None
+
+
 def _derive_arrival_delay(extracted: dict[str, Any]) -> dict[str, Any] | None:
     """Calcule le retard depuis les horaires, ou recoupe celui qui est déclaré.
 
@@ -1203,6 +1241,7 @@ def process(
             if field != "booking_reference_requires_confirmation"
         ]
     timing_note = _derive_arrival_delay(extracted)
+    date_warning = _implausible_date(extracted, date.today())
     route = route_case(extracted)
     result = {
         "model": MODEL,
@@ -1224,6 +1263,20 @@ def process(
                 "outcome": "ok",
             },
             *([timing_note] if timing_note else []),
+            *(
+                [
+                    {
+                        "step": "check_flight_date",
+                        "state": "VRAISEMBLANCE_DATE",
+                        "tool": "deterministic_rules",
+                        "duration_seconds": 0,
+                        "outcome": "implausible",
+                        "details": date_warning,
+                    }
+                ]
+                if date_warning
+                else []
+            ),
             {
                 "step": "route_case",
                 "state": "VALIDATION_CHAMPS",
@@ -1352,7 +1405,10 @@ def process(
         result["decision"] = {
             "status": "needs_information",
             "message": "Une information manque avant la qualification EU261.",
-            "questions": [qualification["reason"]],
+            # Les deux évaluations peuvent poser leur propre question. N'en
+            # remonter qu'une mettait le passager dans une impasse : il
+            # répondait à la première sans jamais voir la seconde.
+            "questions": _pending_questions(qualification, reimbursement),
             "next_tool": None,
         }
         return result

@@ -18,7 +18,7 @@ objectifs : **une vitrine GitHub crédible**, et l'évaluation honnête d'une
 
 État réel du code : extraction multimodale Gemma 4 en JSON strict, function
 calling natif Ollama à trois outils, moteur EU261 déterministe (61 aéroports),
-corpus procédural local de 3 compagnies, dictée vocale locale, 85 tests.
+corpus procédural local de 3 compagnies, dictée vocale locale, 101 tests.
 Dépôt personnel : `github.com/Wesper-Dev/droit-de-retard`.
 
 ---
@@ -134,6 +134,15 @@ ajouté sans borne.
 
 ## 4. Dette technique — à traiter avant d'ajouter quoi que ce soit
 
+**Statut : les dix points sont traités** (26 juillet 2026, 101 tests).
+Conservés comme mémoire du problème et de la solution retenue.
+
+**Ce que ces correctifs ont ajouté au dépôt :** `knowledge/carriers.json`,
+registre d'identité des transporteurs — codes IATA et OACI, raisons sociales,
+filiales, domaines officiels. Il sert à la fois à reconnaître une compagnie
+sous n'importe quelle écriture (4.7) et à valider le canal publié dans la
+lettre (4.6). Les deux se payaient bien ensemble, comme l'audit l'annonçait.
+
 ### 4.1 ~~`extract_iata` prend le dernier code à trois lettres~~ — corrigé
 
 ```
@@ -236,7 +245,7 @@ l'URL, pour désigner un proxy). Trois tests. `app.py` écrit en plus un
 `traceback` avant son 500, dont le message invitait à consulter un terminal où
 rien n'était écrit.
 
-### 4.5 ⚠️ `process()` perd une question
+### 4.5 ~~`process()` perd une question~~ — corrigé
 
 Avec un aéroport hors des 61 entrées, `qualify_case` et
 `assess_ticket_reimbursement` produisent chacun une question, mais seule celle
@@ -245,7 +254,7 @@ de la qualification remonte. Le passager est mis dans une impasse.
 *Correctif :* concaténer et dédupliquer toutes les `question`/`reason` non
 nulles. Trois lignes.
 
-### 4.6 ⚠️ `find_claim_channel` publie le premier résultat Google brut
+### 4.6 ~~`find_claim_channel` publie le premier résultat Google brut~~ — corrigé
 
 `results[0]["link"]`, aucun filtre — alors que `_filter_official_rule_sources`
 impose un hostname exact deux cents lignes plus haut. Et `draft_claim`
@@ -259,7 +268,7 @@ l'utilisateur envoie.**
 
 *Correctif :* allow-list de domaines, à payer avec 4.7.
 
-### 4.7 ⚠️ `_match_policy` est une égalité stricte
+### 4.7 ~~`_match_policy` est une égalité stricte~~ — corrigé
 
 `'Air France KLM'`, `'AirFrance'`, `'TAP Portugal'`, `'easyJet Europe'` → `None`.
 Et la fiche easyJet liste `EZY/EJU/EZS`, qui sont des codes **OACI** : le code
@@ -269,7 +278,7 @@ IATA d'easyJet est `U2`, celui imprimé sur le billet.
 filiales + domaine officiel. Le champ domaine sert d'allow-list à 4.6, les deux
 chantiers se paient ensemble.
 
-### 4.8 ⚠️ `app.py` : deux vérifications, vingt lignes
+### 4.8 ~~`app.py` : deux vérifications, vingt lignes~~ — corrigé
 
 Valider `Host ∈ {127.0.0.1:port, localhost:port}` (tue le DNS rebinding, qui
 permet aujourd'hui à un site tiers de lire l'extraction nominative renvoyée par
@@ -277,7 +286,7 @@ l'API locale) et exiger `Content-Type: application/json` en POST (force un
 préflight, tue le CSRF sur le quota SerpApi). Plus un `traceback.print_exc()`
 avant le 500, dont le message invite à consulter un terminal où rien n'est écrit.
 
-### 4.9 ⚠️ Une fiche périmée est servie comme valide
+### 4.9 ~~Une fiche périmée est servie comme valide~~ — corrigé
 
 La fraîcheur est calculée mais jamais appliquée : `status: "found"` avec toutes
 les procédures, quelle que soit l'ancienneté. Les trois fiches portent
@@ -287,7 +296,7 @@ propre corpus périmé tout en continuant à dicter les démarches.**
 *Correctif :* dégrader en `needs_verification` sans étapes, plus un test
 anti-pourrissement.
 
-### 4.10 ⚠️ Aucun contrôle de vraisemblance sur la date
+### 4.10 ~~Aucun contrôle de vraisemblance sur la date~~ — corrigé
 
 Le billet de démo est daté du **14 septembre 2026**, soit dans le futur, et
 passe sans un mot.

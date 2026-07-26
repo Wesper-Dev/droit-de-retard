@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "verified_on": "2026-07-26",
+  "purpose": "Registre d'identité des transporteurs : reconnaître une compagnie sous ses différentes écritures, et savoir quels domaines lui appartiennent réellement. Ne contient aucune règle d'éligibilité.",
+  "carriers": [
+    {
+      "airline_id": "air_france",
+      "name": "Air France",
+      "iata": "AF",
+      "icao": "AFR",
+      "aliases": [
+        "air france",
+        "airfrance",
+        "air france klm",
+        "airfrance klm",
+        "société air france",
+        "compagnie air france"
+      ],
+      "domains": [
+        "airfrance.fr",
+        "airfrance.com",
+        "airfrance.co.uk",
+        "airfrance.us"
+      ]
+    },
+    {
+      "airline_id": "tap_air_portugal",
+      "name": "TAP Air Portugal",
+      "iata": "TP",
+      "icao": "TAP",
+      "aliases": [
+        "tap",
+        "tap air portugal",
+        "tap portugal",
+        "transportes aereos portugueses",
+        "transportes aéreos portugueses",
+        "air portugal"
+      ],
+      "domains": [
+        "flytap.com",
+        "tapairportugal.com"
+      ]
+    },
+    {
+      "airline_id": "easyjet",
+      "name": "easyJet",
+      "iata": "U2",
+      "icao": "EZY",
+      "aliases": [
+        "easyjet",
+        "easy jet",
+        "easyjet europe",
+        "easyjet switzerland",
+        "easyjet airline company",
+        "eju",
+        "ezs"
+      ],
+      "domains": [
+        "easyjet.com",
+        "easyjet.fr",
+        "easyjet.ch"
+      ]
+    }
+  ],
+  "limits": [
+    "Trois transporteurs seulement. Une compagnie absente n'est pas reconnue et aucun domaine ne peut être validé pour elle : le canal reste alors non confirmé plutôt qu'affirmé.",
+    "Les codes IATA à deux caractères sont ambigus hors contexte : ils ne sont acceptés que s'ils constituent la totalité du libellé, jamais repérés à l'intérieur d'une phrase."
+  ]
+}

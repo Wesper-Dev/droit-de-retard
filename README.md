@@ -61,6 +61,7 @@ seuils, de la distance, du montant et des branches de sécurité.
 | `eu261.py` | Distance et qualification EU261 simplifiées |
 | `tools.py` | Recherche SerpApi minimisée, corpus local et récupération hors ligne |
 | `knowledge/airline_policies/` | Corpus procédural local des compagnies |
+| `knowledge/carriers.json` | Identité des transporteurs et domaines officiels |
 | `app.py` | Serveur HTTP local sans dépendance Python externe |
 | `static/index.html` | Interface de démonstration |
 | `test_agent.py` | Tests déterministes |
@@ -158,7 +159,7 @@ ou d'éligibilité.
 .venv/bin/python -m unittest -v test_agent.py
 ```
 
-Les 85 tests couvrent le routage, la normalisation des durées, les seuils, les
+Les 101 tests couvrent le routage, la normalisation des durées, les seuils, les
 tranches de distance, le remboursement séparé et la confidentialité des
 recherches. Ils vérifient également les schémas d'outils, le parsing de
 `tool_calls`, le retour `role=tool`, le rejet des fonctions ou arguments hors

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 POLICY_DIR = Path(__file__).resolve().parent / "knowledge" / "airline_policies"
+CARRIERS_PATH = Path(__file__).resolve().parent / "knowledge" / "carriers.json"
 MAX_POLICY_AGE_DAYS = 90
 
 SERPAPI_URL = "https://serpapi.com/search.json"
@@ -341,18 +342,89 @@ def _load_policy_files() -> list[dict[str, Any]]:
     return fiches
 
 
+def _normalise_carrier(value: str) -> str:
+    """Réduit un nom de compagnie à sa forme comparable.
+
+    « Air France », « AirFrance » et « AIR  FRANCE » désignent le même
+    transporteur : seuls les caractères alphanumériques sont conservés.
+    """
+    lowered = value.casefold().strip()
+    accents = {
+        "à": "a", "â": "a", "ä": "a", "é": "e", "è": "e", "ê": "e", "ë": "e",
+        "î": "i", "ï": "i", "ô": "o", "ö": "o", "ù": "u", "û": "u", "ü": "u",
+        "ç": "c",
+    }
+    folded = "".join(accents.get(char, char) for char in lowered)
+    return "".join(char for char in folded if char.isalnum())
+
+
+def load_carriers() -> list[dict[str, Any]]:
+    """Registre d'identité des transporteurs, ou liste vide s'il est illisible."""
+    try:
+        payload = json.loads(CARRIERS_PATH.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return []
+    carriers = payload.get("carriers")
+    return carriers if isinstance(carriers, list) else []
+
+
+def identify_carrier(airline: str | None) -> dict[str, Any] | None:
+    """Reconnaît un transporteur sous n'importe laquelle de ses écritures."""
+    needle = _normalise_carrier(airline or "")
+    if not needle:
+        return None
+    for carrier in load_carriers():
+        names = [carrier.get("name", ""), *(carrier.get("aliases") or [])]
+        if any(_normalise_carrier(name) == needle for name in names if name):
+            return carrier
+        # Les codes IATA font deux caractères : trop courts pour être cherchés
+        # dans une phrase, ils ne valent que seuls. Le code OACI en fait trois
+        # et reste sans ambiguïté ici.
+        for code_field in ("iata", "icao"):
+            code = carrier.get(code_field)
+            if code and _normalise_carrier(code) == needle:
+                return carrier
+    return None
+
+
+def _is_official_url(url: str | None, domains: tuple[str, ...]) -> bool:
+    """Vrai si l'URL appartient au domaine du transporteur ou à un sous-domaine.
+
+    La comparaison porte sur les composants du nom d'hôte, jamais sur une
+    inclusion de chaîne : `airfrance.fr.exemple-arnaque.com` ne doit pas passer
+    pour un domaine d'Air France.
+    """
+    hostname = (urllib.parse.urlparse(url or "").hostname or "").casefold()
+    if not hostname:
+        return False
+    for domain in domains:
+        domain = domain.casefold()
+        if hostname == domain or hostname.endswith("." + domain):
+            return True
+    return False
+
+
+def official_domains(airline: str | None) -> tuple[str, ...]:
+    """Domaines qui appartiennent réellement au transporteur."""
+    carrier = identify_carrier(airline)
+    return tuple(carrier.get("domains") or ()) if carrier else ()
+
+
 def _match_policy(airline: str, fiches: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Correspondance exacte sur le nom ou un alias, insensible à la casse."""
-    needle = airline.casefold().strip()
+    """Retrouve la fiche procédurale du transporteur reconnu."""
+    carrier = identify_carrier(airline)
+    if carrier is not None:
+        for fiche in fiches:
+            if fiche.get("airline_id") == carrier.get("airline_id"):
+                return fiche
+    # Repli sur les alias portés par la fiche elle-même, pour qu'une fiche
+    # ajoutée sans entrée dans le registre reste utilisable.
+    needle = _normalise_carrier(airline)
     if not needle:
         return None
     for fiche in fiches:
-        names = [fiche.get("company", "")]
-        names.extend(fiche.get("aliases") or [])
-        if any(
-            isinstance(name, str) and name.casefold().strip() == needle
-            for name in names
-        ):
+        names = [fiche.get("company", ""), *(fiche.get("aliases") or [])]
+        if any(_normalise_carrier(name) == needle for name in names if name):
             return fiche
     return None
 
@@ -394,6 +466,25 @@ def retrieve_airline_policy(extracted: dict[str, Any]) -> dict[str, Any]:
         }
 
     freshness, verified_on = _policy_freshness(fiche, datetime.date.today())
+    if freshness != "fresh":
+        # La fraîcheur était calculée puis ignorée : les étapes étaient servies
+        # telles quelles, et `CLAIM_SYSTEM` ordonne de les reprendre dans la
+        # lettre. Une fiche périmée oriente encore, mais ne dicte plus.
+        return {
+            "status": "needs_verification",
+            "source": "local_corpus",
+            "company": fiche.get("company"),
+            "freshness": freshness,
+            "verified_on": verified_on,
+            "legal_scope": fiche.get("legal_scope"),
+            "procedures": [],
+            "message": (
+                "La fiche locale de cette compagnie n'a pas été revérifiée "
+                f"depuis {verified_on or 'une date inconnue'} : ses étapes ne "
+                "sont pas reprises. Consulte directement le site officiel du "
+                "transporteur."
+            ),
+        }
     sources_by_id = {
         source.get("id"): source
         for source in fiche.get("sources") or []
@@ -473,8 +564,39 @@ def find_claim_channel(extracted: dict[str, Any]) -> dict[str, Any]:
             "channel": None,
             "message": str(exc),
         }
+
+    # La requête « formulaire réclamation retard vol » est dominée en publicité
+    # par les intermédiaires à commission. Publier le premier résultat brut
+    # reviendrait à désigner comme canal officiel un service qui prélève 25 à
+    # 35 %, dans la lettre que le passager envoie lui-même.
+    domains = official_domains(airline)
+    if not domains:
+        return {
+            "status": "unverified_channel",
+            "channel": None,
+            "results": results,
+            "message": (
+                "Transporteur absent du registre local : aucun domaine officiel "
+                "ne peut être confirmé. Les résultats sont donnés à titre "
+                "indicatif et doivent être vérifiés."
+            ),
+        }
+    official = [
+        result for result in results if _is_official_url(result.get("link"), domains)
+    ]
+    if not official:
+        return {
+            "status": "no_official_match",
+            "channel": None,
+            "results": results,
+            "message": (
+                "Aucun résultat ne provient d'un domaine officiel de la "
+                f"compagnie ({', '.join(domains)}). Adresse la demande au "
+                "transporteur par ses canaux habituels."
+            ),
+        }
     return {
         "status": "online",
-        "channel": results[0]["link"] if results else None,
-        "results": results,
+        "channel": official[0]["link"],
+        "results": official,
     }

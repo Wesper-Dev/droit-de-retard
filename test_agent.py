@@ -1,6 +1,7 @@
 """Tests déterministes du routage de dossiers aériens."""
 from __future__ import annotations
 
+import datetime
 import io
 import unittest
 from unittest.mock import patch
@@ -11,6 +12,8 @@ from agent import (
     AgentError,
     CLAIM_SCHEMA,
     _chat,
+    _implausible_date,
+    _pending_questions,
     _validate_claim,
     draft_claim,
     merge_incident_statement,
@@ -33,8 +36,12 @@ from eu261 import (
 from tools import (
     RESEARCH_TOOL_DEFINITIONS,
     _api_key,
+    _is_official_url,
     build_research_context,
     build_rule_query,
+    find_claim_channel,
+    identify_carrier,
+    official_domains,
     retrieve_airline_policy,
     verify_air_passenger_rule,
 )
@@ -1260,6 +1267,153 @@ class ChatErrorContractTests(unittest.TestCase):
         with patch("agent.urllib.request.urlopen", side_effect=OSError("broken pipe")):
             with self.assertRaises(AgentError):
                 _chat({"model": "x"})
+
+
+class CarrierIdentityTests(unittest.TestCase):
+    """Une compagnie doit être reconnue sous toutes ses écritures."""
+
+    def test_spelling_variants_reach_the_same_carrier(self):
+        for label in ("Air France", "AirFrance", "AIR  FRANCE", "Air France KLM"):
+            carrier = identify_carrier(label)
+            self.assertIsNotNone(carrier, label)
+            self.assertEqual(carrier["airline_id"], "air_france", label)
+
+    def test_iata_code_printed_on_the_ticket_is_recognised(self):
+        """easyJet s'écrit U2 en IATA ; le corpus ne listait que l'OACI EZY."""
+        for code in ("U2", "EZY"):
+            self.assertEqual(identify_carrier(code)["airline_id"], "easyjet", code)
+
+    def test_unknown_carrier_has_no_domains(self):
+        self.assertIsNone(identify_carrier("Ryanair"))
+        self.assertEqual(official_domains("Ryanair"), ())
+
+
+class ClaimChannelAllowListTests(unittest.TestCase):
+    """Le canal publié dans la lettre doit venir du transporteur lui-même."""
+
+    def test_only_official_domains_are_accepted(self):
+        domains = official_domains("Air France")
+        for url, expected in (
+            ("https://wwws.airfrance.fr/contact/topic/refund", True),
+            ("https://www.airfrance.fr/", True),
+            ("https://www.airhelp.com/fr/air-france/", False),
+            ("https://www.flightright.fr/air-france", False),
+            # Usurpation par suffixe : la comparaison porte sur les composants
+            # du nom d'hôte, jamais sur une inclusion de chaîne.
+            ("https://airfrance.fr.exemple-arnaque.com/form", False),
+            ("https://notairfrance.fr/", False),
+        ):
+            self.assertEqual(_is_official_url(url, domains), expected, url)
+
+    @patch("tools.web_search")
+    def test_intermediary_never_becomes_the_official_channel(self, search):
+        search.return_value = [
+            {"title": "Indemnisation Air France", "link": "https://www.airhelp.com/fr/"},
+            {"title": "Flightright", "link": "https://www.flightright.fr/air-france"},
+        ]
+
+        result = find_claim_channel({"airline": "Air France"})
+
+        self.assertEqual(result["status"], "no_official_match")
+        self.assertIsNone(result["channel"])
+
+    @patch("tools.web_search")
+    def test_official_result_is_selected_even_if_not_first(self, search):
+        search.return_value = [
+            {"title": "AirHelp", "link": "https://www.airhelp.com/fr/"},
+            {
+                "title": "Air France",
+                "link": "https://wwws.airfrance.fr/contact/topic/refund",
+            },
+        ]
+
+        result = find_claim_channel({"airline": "Air France"})
+
+        self.assertEqual(result["status"], "online")
+        self.assertIn("airfrance.fr", result["channel"])
+
+    @patch("tools.web_search")
+    def test_unknown_carrier_refuses_to_confirm_a_channel(self, search):
+        search.return_value = [{"title": "x", "link": "https://exemple.test/"}]
+
+        result = find_claim_channel({"airline": "Ryanair"})
+
+        self.assertEqual(result["status"], "unverified_channel")
+        self.assertIsNone(result["channel"])
+
+
+class PolicyFreshnessTests(unittest.TestCase):
+    def test_stale_sheet_withholds_its_steps(self):
+        class FrozenDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return datetime.date(2027, 1, 1)
+
+        with patch.object(datetime, "date", FrozenDate):
+            result = retrieve_airline_policy(
+                {"airline": "Air France", "disruption_type": "delay"}
+            )
+
+        self.assertEqual(result["status"], "needs_verification")
+        self.assertEqual(result["procedures"], [])
+        self.assertEqual(result["freshness"], "stale")
+
+    def test_fresh_sheet_still_serves_its_steps(self):
+        result = retrieve_airline_policy(
+            {"airline": "Air France", "disruption_type": "delay"}
+        )
+
+        self.assertEqual(result["status"], "found")
+        self.assertTrue(result["procedures"])
+
+
+class PendingQuestionsTests(unittest.TestCase):
+    def test_every_open_question_is_surfaced(self):
+        questions = _pending_questions(
+            {"status": "needs_information", "reason": "Aéroport non référencé : TLV"},
+            {"status": "needs_information", "question": "Retard au départ ?"},
+        )
+
+        self.assertEqual(len(questions), 2)
+
+    def test_settled_assessments_ask_nothing(self):
+        self.assertEqual(
+            _pending_questions({"status": "likely", "reason": "ok"}), []
+        )
+
+    def test_duplicates_are_removed(self):
+        questions = _pending_questions(
+            {"status": "needs_information", "reason": "Même question"},
+            {"status": "needs_information", "reason": "Même question"},
+        )
+
+        self.assertEqual(questions, ["Même question"])
+
+
+class FlightDatePlausibilityTests(unittest.TestCase):
+    TODAY = datetime.date(2026, 7, 26)
+
+    def test_future_flight_is_flagged(self):
+        warning = _implausible_date({"departure_date": "2026-09-14"}, self.TODAY)
+
+        self.assertIsNotNone(warning)
+        self.assertIn("futur", warning)
+
+    def test_very_old_flight_warns_without_concluding(self):
+        warning = _implausible_date({"departure_date": "2021-01-05"}, self.TODAY)
+
+        self.assertIn("quatre ans", warning)
+        # On alerte, on ne déclare jamais la prescription acquise.
+        self.assertNotIn("prescrit", warning.lower())
+
+    def test_recent_past_flight_is_accepted(self):
+        self.assertIsNone(
+            _implausible_date({"departure_date": "2026-07-25"}, self.TODAY)
+        )
+
+    def test_unparseable_date_is_not_a_warning(self):
+        for value in ("pas une date", None, ""):
+            self.assertIsNone(_implausible_date({"departure_date": value}, self.TODAY))
 
 
 class ClaimSchemaTests(unittest.TestCase):

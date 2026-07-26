@@ -222,6 +222,10 @@
     computed: ["Retard calculé depuis les horaires", ""],
     consistent: ["Horaires cohérents avec la déclaration", ""],
     divergent: ["Écart entre horaires et déclaration", "warn"],
+    unverified_channel: ["Canal non confirmé", "warn"],
+    no_official_match: ["Aucun domaine officiel trouvé", "warn"],
+    needs_verification: ["Fiche à revérifier", "warn"],
+    implausible: ["Date invraisemblable", "bad"],
     ok: ["Terminé", ""]
   }[status] || [String(status || "État inconnu"), "neutral"]);
 
