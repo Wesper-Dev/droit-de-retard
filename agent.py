@@ -28,6 +28,7 @@ from tools import (
     RESEARCH_TOOL_DEFINITIONS,
     build_research_context,
     find_claim_channel,
+    retrieve_airline_policy,
     verify_air_passenger_rule,
 )
 
@@ -161,12 +162,17 @@ référence non vérifiée en règle confirmée. La lettre doit rester factuelle
 polie, demander confirmation à la compagnie et ne contenir aucun fait inventé.
 INDEMNISATION_EU261 et REMBOURSEMENT_BILLET sont deux décisions indépendantes :
 un refus d'indemnisation n'annule pas un remboursement indiqué likely ou
-conditional. La lettre ne demande que les droits marqués likely ou conditional."""
+conditional. La lettre ne demande que les droits marqués likely ou conditional.
+Si RECHERCHE.airline_policy.status vaut found, la checklist doit reprendre les
+étapes de dépôt de cette fiche et citer son channel_url tel quel, sans le
+modifier. Si le statut vaut not_found, n'invente aucun formulaire ni aucune
+adresse : indique seulement d'adresser la demande au transporteur."""
 
 RESEARCH_TOOL_SYSTEM = """Tu routes un dossier aérien vers des outils.
-Tu dois demander les deux outils disponibles, une fois chacun :
+Tu dois demander les trois outils disponibles, une fois chacun :
 1. verify_air_passenger_rule pour les règles officielles ;
-2. find_claim_channel pour le canal de réclamation.
+2. find_claim_channel pour le canal de réclamation ;
+3. retrieve_airline_policy pour la procédure locale de la compagnie.
 Recopie exactement les valeurs du CONTEXTE_MINIMISE dans les arguments.
 N'ajoute aucune donnée, ne qualifie pas toi-même le dossier et ne réponds pas
 en prose : utilise uniquement les appels d'outils."""
@@ -174,6 +180,7 @@ en prose : utilise uniquement les appels d'outils."""
 RESEARCH_TOOL_ORDER = (
     "verify_air_passenger_rule",
     "find_claim_channel",
+    "retrieve_airline_policy",
 )
 
 
@@ -215,9 +222,47 @@ def _render_pdf_first_page(source: Path, destination: Path) -> None:
         raise AgentError(f"Impossible de convertir le PDF : {detail[0]}")
 
 
+def _webp_as_png(document: Path) -> bytes:
+    """Convertit un WEBP en PNG : Ollama refuse le WEBP avec une erreur 400."""
+    converter = shutil.which("ffmpeg")
+    command_for = {
+        "ffmpeg": lambda source, target: [
+            converter, "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(source), str(target),
+        ],
+        "sips": lambda source, target: [
+            converter, "-s", "format", "png", str(source), "--out", str(target),
+        ],
+    }
+    kind = "ffmpeg"
+    if converter is None:
+        converter, kind = shutil.which("sips"), "sips"
+    if converter is None:
+        raise AgentError(
+            "La lecture d'un WEBP nécessite ffmpeg sur cette machine. "
+            "Convertis le billet en PNG ou JPEG."
+        )
+    with tempfile.TemporaryDirectory(prefix="droit-retard-image-") as folder:
+        target = Path(folder) / "page.png"
+        try:
+            completed = subprocess.run(
+                command_for[kind](document, target),
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AgentError("La conversion de l'image a expiré.") from exc
+        if completed.returncode or not target.is_file():
+            raise AgentError("Ce fichier WEBP n'a pas pu être converti.")
+        return target.read_bytes()
+
+
 def _image_bytes(document: Path) -> bytes:
     suffix = document.suffix.lower()
-    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+    if suffix == ".webp":
+        return _webp_as_png(document)
+    if suffix in {".png", ".jpg", ".jpeg"}:
         return document.read_bytes()
     if suffix != ".pdf":
         raise AgentError("Formats acceptés : PDF, PNG, JPG, JPEG ou WEBP.")
@@ -237,6 +282,22 @@ def _chat(payload: dict[str, Any], timeout: int = 300) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.load(response)
+    except urllib.error.HTTPError as exc:
+        # HTTPError hérite de URLError : sans cette branche, une réponse 400
+        # d'Ollama serait annoncée comme un serveur injoignable.
+        try:
+            detail = json.loads(exc.read()).get("error", "")
+        except (ValueError, OSError):
+            detail = ""
+        if isinstance(detail, str) and detail.startswith("{"):
+            try:
+                detail = json.loads(detail).get("error", {}).get("message", detail)
+            except ValueError:
+                pass
+        raise AgentError(
+            f"Ollama a refusé la requête (HTTP {exc.code})"
+            + (f" : {str(detail)[:160]}" if detail else ".")
+        ) from exc
     except urllib.error.URLError as exc:
         raise AgentError(
             "Ollama est inaccessible. Vérifie qu'il est lancé et que "
@@ -586,6 +647,11 @@ def _expected_tool_arguments(
         }
     if tool_name == "find_claim_channel":
         return {"airline": context["airline"]}
+    if tool_name == "retrieve_airline_policy":
+        return {
+            "airline": context["airline"],
+            "incident": context["policy_incident"],
+        }
     raise ValueError("outil non autorisé")
 
 
@@ -620,11 +686,13 @@ def _validate_tool_call(
 def _execute_research_tool(
     tool_name: str, arguments: dict[str, Any]
 ) -> dict[str, Any]:
-    """Dispatche uniquement vers les deux fonctions explicitement autorisées."""
+    """Dispatche uniquement vers les trois fonctions explicitement autorisées."""
     if tool_name == "verify_air_passenger_rule":
         return verify_air_passenger_rule(arguments)
     if tool_name == "find_claim_channel":
         return find_claim_channel(arguments)
+    if tool_name == "retrieve_airline_policy":
+        return retrieve_airline_policy(arguments)
     raise ValueError("outil non autorisé")
 
 
@@ -648,7 +716,7 @@ def research_case(extracted: dict[str, Any]) -> tuple[dict[str, Any], list[dict]
             ),
         },
     ]
-    for _round in range(2):
+    for _round in range(len(RESEARCH_TOOL_ORDER)):
         try:
             response = _chat(
                 {
@@ -735,6 +803,7 @@ def research_case(extracted: dict[str, Any]) -> tuple[dict[str, Any], list[dict]
 
     rights = executed["verify_air_passenger_rule"]
     channel = executed["find_claim_channel"]
+    policy = executed["retrieve_airline_policy"]
     selector_outcome = (
         "gemma_tool_calls"
         if all(
@@ -775,8 +844,20 @@ def research_case(extracted: dict[str, Any]) -> tuple[dict[str, Any], list[dict]
             "outcome": channel["status"],
             "details": channel.get("message"),
         },
+        {
+            "step": "retrieve_airline_policy",
+            "state": "CORPUS_LOCAL",
+            "tool": "retrieve_airline_policy",
+            "selected_by": selection_source["retrieve_airline_policy"],
+            "outcome": policy["status"],
+            "details": policy.get("message"),
+        },
     ]
-    return {"rights": rights, "claim_channel": channel}, trace
+    return {
+        "rights": rights,
+        "claim_channel": channel,
+        "airline_policy": policy,
+    }, trace
 
 
 def draft_claim(
@@ -942,7 +1023,7 @@ def process(
             "questions": [],
             "next_tool": None,
         }
-    if qualification["status"] == "needs_information":
+    if qualification["status"] == "needs_information" and not reimbursement_actionable:
         result["decision"] = {
             "status": "needs_information",
             "message": "Une information manque avant la qualification EU261.",
@@ -950,6 +1031,18 @@ def process(
             "next_tool": None,
         }
         return result
+    if qualification["status"] == "needs_information" and reimbursement_actionable:
+        # Une indemnisation non qualifiable ne doit pas effacer un remboursement
+        # déjà actionnable : les deux droits restent indépendants.
+        result["decision"] = {
+            "status": "ready_for_claim",
+            "message": (
+                "L'indemnisation forfaitaire n'est pas encore qualifiable, mais "
+                "le remboursement du billet peut être demandé."
+            ),
+            "questions": [qualification["reason"]],
+            "next_tool": None,
+        }
 
     claim, claim_duration = draft_claim(
         extracted,

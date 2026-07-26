@@ -5,3 +5,24 @@ __pycache__/
 tmp/
 output/
 .DS_Store
+
+# Médias : liste blanche stricte.
+# Un justificatif de voyage porte un nom, une référence de réservation et
+# souvent un QR code exploitable. Aucun ne doit partir par inadvertance dans un
+# `git add -A` : on n'autorise donc explicitement que les fichiers de
+# démonstration fictifs et les captures assumées de la documentation.
+*.webp
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+*.pptx
+*.mov
+*.mp4
+!billet_avion_fictif.png
+!billet_avion_fictif.pdf
+!docs/**/*.png
+!docs/**/*.gif
+!examples/**/*.png
+!examples/**/*.gif

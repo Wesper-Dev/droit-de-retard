@@ -1,6 +1,7 @@
 """Outils réseau compacts avec récupération explicite hors ligne."""
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import urllib.error
@@ -8,6 +9,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+POLICY_DIR = Path(__file__).resolve().parent / "knowledge" / "airline_policies"
+MAX_POLICY_AGE_DAYS = 90
 
 SERPAPI_URL = "https://serpapi.com/search.json"
 OFFICIAL_RIGHTS_URL = (
@@ -83,6 +87,35 @@ RESEARCH_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "retrieve_airline_policy",
+            "description": (
+                "Consulte le corpus procédural local de la compagnie, sans "
+                "aucun accès réseau et sans donnée du passager. Décrit "
+                "uniquement comment déposer une demande, jamais un droit."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "airline": {"type": "string", "maxLength": 100},
+                    "incident": {
+                        "type": "string",
+                        "enum": [
+                            "flight_delay",
+                            "flight_cancellation",
+                            "denied_boarding",
+                            "flight_rescheduling",
+                            "",
+                        ],
+                    },
+                },
+                "required": ["airline", "incident"],
+            },
+        },
+    },
 ]
 
 ALLOWED_DISRUPTIONS = {
@@ -90,6 +123,22 @@ ALLOWED_DISRUPTIONS = {
     "cancellation",
     "denied_boarding",
     "missed_connection",
+}
+
+ALLOWED_POLICY_INCIDENTS = {
+    "flight_delay",
+    "flight_cancellation",
+    "denied_boarding",
+    "flight_rescheduling",
+}
+
+POLICY_INCIDENT_BY_DISRUPTION = {
+    "delay": "flight_delay",
+    "cancellation": "flight_cancellation",
+    "denied_boarding": "denied_boarding",
+    # Une correspondance manquée est documentée par les compagnies sous le
+    # libellé « retard » : aucune fiche ne lui donne une procédure distincte.
+    "missed_connection": "flight_delay",
 }
 
 
@@ -156,6 +205,9 @@ def build_research_context(extracted: dict[str, Any]) -> dict[str, Any]:
         "arrival_delay_minutes": arrival_delay,
         "departure_delay_minutes": limited_minutes("departure_delay_minutes"),
         "airline": limited_string("airline", 100),
+        # Dérivé, jamais choisi par le modèle : la validation stricte des
+        # arguments impose que chaque valeur vienne de ce contexte.
+        "policy_incident": POLICY_INCIDENT_BY_DISRUPTION.get(disruption, ""),
     }
 
 
@@ -269,6 +321,132 @@ def verify_air_passenger_rule(extracted: dict[str, Any]) -> dict[str, Any]:
         "reason": None,
         "verified_live": True,
         "sources": sources,
+    }
+
+
+def _load_policy_files() -> list[dict[str, Any]]:
+    """Charge les fiches locales en ignorant silencieusement un fichier illisible."""
+    fiches = []
+    try:
+        paths = sorted(POLICY_DIR.glob("*.json"))
+    except OSError:
+        return fiches
+    for path in paths:
+        try:
+            fiche = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(fiche, dict) and fiche.get("company"):
+            fiches.append(fiche)
+    return fiches
+
+
+def _match_policy(airline: str, fiches: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Correspondance exacte sur le nom ou un alias, insensible à la casse."""
+    needle = airline.casefold().strip()
+    if not needle:
+        return None
+    for fiche in fiches:
+        names = [fiche.get("company", "")]
+        names.extend(fiche.get("aliases") or [])
+        if any(
+            isinstance(name, str) and name.casefold().strip() == needle
+            for name in names
+        ):
+            return fiche
+    return None
+
+
+def _policy_freshness(fiche: dict[str, Any], today: datetime.date) -> tuple[str, str | None]:
+    """Renvoie fresh ou stale sans jamais présenter une fiche périmée comme à jour."""
+    verified_on = (fiche.get("freshness") or {}).get("verified_on")
+    if not isinstance(verified_on, str):
+        return "unknown", None
+    try:
+        verified = datetime.date.fromisoformat(verified_on)
+    except ValueError:
+        return "unknown", None
+    age = (today - verified).days
+    return ("fresh" if 0 <= age <= MAX_POLICY_AGE_DAYS else "stale"), verified_on
+
+
+def retrieve_airline_policy(extracted: dict[str, Any]) -> dict[str, Any]:
+    """Lit le corpus procédural local. Aucun réseau, aucune donnée personnelle."""
+    context = build_research_context(extracted)
+    airline = context["airline"]
+    # Appelée par le dispatcher, la fonction reçoit les arguments déjà
+    # minimisés et validés ; appelée sur un dossier complet, elle dérive
+    # l'incident du type d'incident extrait.
+    incident = extracted.get("incident")
+    if not isinstance(incident, str) or incident not in ALLOWED_POLICY_INCIDENTS:
+        incident = context["policy_incident"]
+    fiche = _match_policy(airline, _load_policy_files())
+    if fiche is None:
+        return {
+            "status": "not_found",
+            "source": "local_corpus",
+            "company": None,
+            "procedures": [],
+            "message": (
+                "Aucune fiche locale pour cette compagnie : le corpus couvre "
+                "seulement quelques transporteurs et n'invente rien."
+            ),
+        }
+
+    freshness, verified_on = _policy_freshness(fiche, datetime.date.today())
+    sources_by_id = {
+        source.get("id"): source
+        for source in fiche.get("sources") or []
+        if isinstance(source, dict)
+    }
+    all_procedures = [
+        procedure
+        for procedure in fiche.get("procedures") or []
+        if isinstance(procedure, dict)
+    ]
+    matching = [
+        procedure
+        for procedure in all_procedures
+        if incident and incident in (procedure.get("incidents") or [])
+    ]
+    # Une fiche sans procédure pour cet incident reste utile : on la rend
+    # entière, en signalant qu'elle n'est pas spécifique à l'incident.
+    selected = matching or all_procedures
+
+    procedures = []
+    for procedure in selected:
+        channel = procedure.get("channel") or {}
+        procedures.append(
+            {
+                "topic": procedure.get("topic"),
+                "channel_label": channel.get("label"),
+                "channel_url": channel.get("url"),
+                "steps": procedure.get("steps") or [],
+                "required_information": procedure.get("required_information") or [],
+                "required_documents": procedure.get("required_documents") or [],
+                "limits": procedure.get("limits") or [],
+                "sources": [
+                    {
+                        "title": sources_by_id[source_id].get("title"),
+                        "link": sources_by_id[source_id].get("url"),
+                        "verified_on": sources_by_id[source_id].get("verified_on"),
+                    }
+                    for source_id in procedure.get("source_ids") or []
+                    if source_id in sources_by_id
+                ],
+            }
+        )
+
+    return {
+        "status": "found",
+        "source": "local_corpus",
+        "company": fiche.get("company"),
+        "incident_specific": bool(matching),
+        "freshness": freshness,
+        "verified_on": verified_on,
+        "legal_scope": fiche.get("legal_scope"),
+        "procedures": procedures,
+        "message": None,
     }
 
 

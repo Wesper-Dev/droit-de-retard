@@ -40,10 +40,14 @@ Une recherche déterministe suffit pour trois compagnies :
 5. retourner plusieurs procédures si le sujet est ambigu, par exemple
    indemnisation et remboursement de dépenses.
 
-L'outil futur `retrieve_airline_policy(airline, topic)` devra accepter une
-liste blanche de sujets, valider ses arguments et ne recevoir aucune identité,
-référence de réservation ou coordonnée bancaire. Une base vectorielle n'est
-pas utile pour ce MVP ; elle ne serait envisagée qu'après mesure d'un gain.
+L'outil livré `retrieve_airline_policy(airline, incident)` n'accepte qu'une
+liste blanche d'incidents, valide ses arguments et ne reçoit aucune identité,
+référence de réservation ou coordonnée bancaire. L'incident est **dérivé** du
+type d'incident extrait, jamais choisi librement par le modèle : la validation
+stricte des arguments impose que chaque valeur provienne du contexte minimisé.
+La lecture est purement locale, sans aucun accès réseau, ce qui rend cette
+section disponible même hors ligne. Une base vectorielle n'est pas utile pour
+ce MVP ; elle ne serait envisagée qu'après mesure d'un gain.
 
 ## Fraîcheur et fallback
 

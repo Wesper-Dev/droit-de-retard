@@ -23,7 +23,7 @@ Le résultat n'est pas systématiquement une lettre. Le pipeline choisit entre :
   indisponibles.
 
 Le function calling natif Gemma/Ollama pilote les recherches. Gemma reçoit les
-schémas JSON stricts des deux outils, produit `message.tool_calls`, puis un
+schémas JSON stricts des trois outils, produit `message.tool_calls`, puis un
 dispatcher Python en liste blanche valide le nom et exige exactement les
 arguments issus du contexte minimisé. Les résultats sont renvoyés au modèle
 avec le rôle `tool` lorsqu'un second tour est nécessaire. Si un appel manque,
@@ -57,7 +57,8 @@ seuils, de la distance, du montant et des branches de sécurité.
 | --- | --- |
 | `agent.py` | Extraction multimodale, routage, recherche, rédaction et trace |
 | `eu261.py` | Distance et qualification EU261 simplifiées |
-| `tools.py` | Recherche SerpApi minimisée et récupération hors ligne |
+| `tools.py` | Recherche SerpApi minimisée, corpus local et récupération hors ligne |
+| `knowledge/airline_policies/` | Corpus procédural local des compagnies |
 | `app.py` | Serveur HTTP local sans dépendance Python externe |
 | `static/index.html` | Interface de démonstration |
 | `test_agent.py` | Tests déterministes |
@@ -155,7 +156,7 @@ ou d'éligibilité.
 .venv/bin/python -m unittest -v test_agent.py
 ```
 
-Les 32 tests couvrent le routage, la normalisation des durées, les seuils, les
+Les 47 tests couvrent le routage, la normalisation des durées, les seuils, les
 tranches de distance, le remboursement séparé et la confidentialité des
 recherches. Ils vérifient également les schémas d'outils, le parsing de
 `tool_calls`, le retour `role=tool`, le rejet des fonctions ou arguments hors
@@ -197,8 +198,11 @@ Ces services restent plus complets pour les relances et la représentation.
 ## Limites
 
 - règles volontairement simplifiées pour les scénarios de démonstration ;
-- quatre aéroports référencés dans le calcul local ;
+- 61 aéroports référencés dans le calcul local : un code absent produit
+  `needs_information`, jamais une distance approximative ;
+- le Royaume-Uni est traité hors champ EU261 depuis le Brexit ; le régime
+  UK261 n'est pas implémenté ;
 - aucune vérification historique fiable d'un vol ou transporteur fictif ;
 - aucun envoi automatique de réclamation ;
-- RAG des procédures de compagnies prévu comme bonus, non requis pour la
-  démonstration principale.
+- corpus procédural local limité à trois compagnies : toute autre compagnie
+  renvoie `not_found` plutôt qu'une procédure inventée.

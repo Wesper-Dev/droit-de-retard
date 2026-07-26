@@ -215,8 +215,17 @@
     gemma_tool_calls: ["Function calling Gemma", ""],
     deterministic_fallback: ["Fallback déterministe", "warn"],
     demo_carrier: ["Compagnie de démonstration", "neutral"],
+    found: ["Fiche locale trouvée", ""],
+    not_found: ["Aucune fiche locale", "neutral"],
     ok: ["Terminé", ""]
   }[status] || [String(status || "État inconnu"), "neutral"]);
+
+  const topicLabel = topic => ({
+    refund_or_compensation_request: "Remboursement, avoir ou indemnisation",
+    compensation_claim: "Demande d'indemnisation",
+    disruption_expense_refund: "Remboursement des frais engagés",
+    unused_ticket_refund: "Remboursement d'un billet non utilisé"
+  }[topic] || String(topic || "Procédure"));
 
   const fileAsBase64 = file => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -509,6 +518,69 @@
             "Aucun canal officiel confirmé : adressez la demande au transporteur qui a opéré le vol.",
             "note"
           ));
+        }
+        result.append(section);
+      }
+
+      const policy = data.research.airline_policy;
+      if (policy) {
+        const section = element("div", null, "section");
+        const [label, className] = statusMeta(policy.status);
+        section.append(element("h3", "Procédure de la compagnie · corpus local"));
+        section.append(element("span", label, `badge ${className}`));
+        if (policy.freshness) {
+          section.append(element(
+            "span",
+            policy.freshness === "fresh"
+              ? `Vérifiée le ${policy.verified_on}`
+              : `À revérifier — dernière vérification ${policy.verified_on}`,
+            `badge ${policy.freshness === "fresh" ? "" : "warn"}`
+          ));
+        }
+        section.append(element(
+          "p",
+          "Lu hors ligne sur cette machine : cette section reste disponible même sans réseau.",
+          "note"
+        ));
+        if (policy.status === "found" && !policy.incident_specific) {
+          section.append(element(
+            "p",
+            "⚠ Aucune procédure spécifique à cet incident : la fiche complète est affichée.",
+            "note"
+          ));
+        }
+        for (const procedure of policy.procedures || []) {
+          section.append(element("h3", topicLabel(procedure.topic)));
+          if (procedure.channel_url) {
+            const link = element("a", procedure.channel_label || procedure.channel_url);
+            link.href = procedure.channel_url;
+            link.target = "_blank";
+            link.rel = "noreferrer";
+            const paragraph = element("p");
+            paragraph.append(link);
+            section.append(paragraph);
+          }
+          addList(section, procedure.steps);
+          if (procedure.required_documents?.length) {
+            section.append(element("p", "Pièces demandées", "note"));
+            addList(section, procedure.required_documents);
+          }
+          for (const limit of procedure.limits || []) {
+            section.append(element("p", `⚠ ${limit}`, "note"));
+          }
+          for (const source of procedure.sources || []) {
+            const link = element("a", source.title || source.link);
+            link.href = source.link;
+            link.target = "_blank";
+            link.rel = "noreferrer";
+            const paragraph = element("p", null, "note");
+            paragraph.append(link);
+            section.append(paragraph);
+          }
+        }
+        if (policy.message) section.append(element("p", policy.message, "note"));
+        if (policy.legal_scope) {
+          section.append(element("p", policy.legal_scope, "note"));
         }
         result.append(section);
       }

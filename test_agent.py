@@ -15,6 +15,7 @@ from agent import (
     transcribe_audio,
 )
 from eu261 import (
+    AIRPORTS,
     assess_ticket_reimbursement,
     compensation_amount,
     compute_distance,
@@ -25,6 +26,7 @@ from tools import (
     _api_key,
     build_research_context,
     build_rule_query,
+    retrieve_airline_policy,
     verify_air_passenger_rule,
 )
 
@@ -258,6 +260,85 @@ class RouteCaseTests(unittest.TestCase):
     @patch("agent.draft_claim")
     @patch("agent.research_case")
     @patch("agent.extract_flight")
+    def test_ticket_refund_survives_an_unqualifiable_compensation(
+        self, extract_flight, research_case_mock, draft_claim
+    ):
+        """Un aéroport non référencé ne doit pas effacer un remboursement acquis."""
+        extract_flight.return_value = (
+            {
+                **COMPLETE_FLIGHT,
+                "airline": "Aurora Airlines",
+                # Code volontairement hors table : la qualification doit alors
+                # renvoyer needs_information au lieu d'estimer une distance.
+                "origin": "Tel Aviv TLV",
+                "disruption_type": "delay",
+                "delay_minutes": 200,
+                "arrival_delay_minutes": 200,
+                "departure_delay_minutes": 310,
+                "trip_completed": False,
+                "uncertain_fields": [],
+            },
+            1.0,
+        )
+        research_case_mock.return_value = (
+            {
+                "rights": {"verified_live": True},
+                "claim_channel": {"status": "demo_carrier"},
+                "airline_policy": {"status": "not_found"},
+            },
+            [],
+        )
+        draft_claim.return_value = ({"summary": "Remboursement possible."}, 1.0)
+
+        result = process(__import__("pathlib").Path("unused.pdf"))
+
+        self.assertEqual(result["qualification"]["status"], "needs_information")
+        self.assertEqual(result["reimbursement"]["status"], "likely")
+        self.assertEqual(result["decision"]["status"], "ready_for_claim")
+        self.assertIsNotNone(result["claim"])
+        # La question sur l'indemnisation reste posée, sans bloquer la lettre.
+        self.assertTrue(result["decision"]["questions"])
+
+    @patch("agent.draft_claim")
+    @patch("agent.research_case")
+    @patch("agent.extract_flight")
+    def test_unqualifiable_compensation_without_refund_still_asks(
+        self, extract_flight, research_case_mock, draft_claim
+    ):
+        extract_flight.return_value = (
+            {
+                **COMPLETE_FLIGHT,
+                "airline": "Aurora Airlines",
+                # Code volontairement hors table : la qualification doit alors
+                # renvoyer needs_information au lieu d'estimer une distance.
+                "origin": "Tel Aviv TLV",
+                "disruption_type": "delay",
+                "delay_minutes": 200,
+                "arrival_delay_minutes": 200,
+                "departure_delay_minutes": None,
+                "trip_completed": True,
+                "uncertain_fields": [],
+            },
+            1.0,
+        )
+        research_case_mock.return_value = (
+            {
+                "rights": {"verified_live": True},
+                "claim_channel": {"status": "demo_carrier"},
+                "airline_policy": {"status": "not_found"},
+            },
+            [],
+        )
+
+        result = process(__import__("pathlib").Path("unused.pdf"))
+
+        self.assertEqual(result["decision"]["status"], "needs_information")
+        self.assertIsNone(result["claim"])
+        draft_claim.assert_not_called()
+
+    @patch("agent.draft_claim")
+    @patch("agent.research_case")
+    @patch("agent.extract_flight")
     def test_successful_pipeline_finishes_ready_for_claim(
         self, extract_flight, research_case_mock, draft_claim
     ):
@@ -433,12 +514,20 @@ class NativeToolCallingTests(unittest.TestCase):
             "channel": None,
             "message": "Compagnie fictive.",
         }
+        self.policy = {
+            "status": "not_found",
+            "source": "local_corpus",
+            "company": None,
+            "procedures": [],
+            "message": "Aucune fiche locale pour cette compagnie.",
+        }
 
+    @patch("agent.retrieve_airline_policy")
     @patch("agent.find_claim_channel")
     @patch("agent.verify_air_passenger_rule")
     @patch("agent._chat")
     def test_gemma_tool_calls_are_parsed_and_dispatched(
-        self, chat, verify_rule, find_channel
+        self, chat, verify_rule, find_channel, retrieve_policy
     ):
         chat.return_value = {
             "message": {
@@ -461,20 +550,36 @@ class NativeToolCallingTests(unittest.TestCase):
                             "arguments": {"airline": "Aurora Airlines"},
                         }
                     },
+                    {
+                        "function": {
+                            "name": "retrieve_airline_policy",
+                            "arguments": {
+                                "airline": "Aurora Airlines",
+                                "incident": "flight_delay",
+                            },
+                        }
+                    },
                 ]
             }
         }
         verify_rule.return_value = self.rights
         find_channel.return_value = self.channel
+        retrieve_policy.return_value = self.policy
 
         research, trace = research_case(self.extracted)
 
         self.assertEqual(research["rights"]["status"], "online")
+        self.assertEqual(research["airline_policy"]["status"], "not_found")
         verify_rule.assert_called_once()
         find_channel.assert_called_once_with({"airline": "Aurora Airlines"})
+        retrieve_policy.assert_called_once_with(
+            {"airline": "Aurora Airlines", "incident": "flight_delay"}
+        )
         self.assertEqual(trace[0]["outcome"], "gemma_tool_calls")
         self.assertEqual(trace[1]["selected_by"], "gemma_tool_call")
         self.assertEqual(trace[2]["selected_by"], "gemma_tool_call")
+        self.assertEqual(trace[3]["selected_by"], "gemma_tool_call")
+        self.assertEqual(trace[3]["state"], "CORPUS_LOCAL")
         payload = chat.call_args.args[0]
         self.assertEqual(payload["tools"], RESEARCH_TOOL_DEFINITIONS)
         serialized_messages = str(payload["messages"])
@@ -499,11 +604,12 @@ class NativeToolCallingTests(unittest.TestCase):
         self.assertIn("aucun outil", trace[0]["details"])
         self.assertEqual(trace[1]["selected_by"], "deterministic_fallback")
 
+    @patch("agent.retrieve_airline_policy")
     @patch("agent.find_claim_channel")
     @patch("agent.verify_air_passenger_rule")
     @patch("agent._chat")
     def test_tool_result_is_returned_before_second_tool_call(
-        self, chat, verify_rule, find_channel
+        self, chat, verify_rule, find_channel, retrieve_policy
     ):
         chat.side_effect = [
             {
@@ -536,13 +642,29 @@ class NativeToolCallingTests(unittest.TestCase):
                     ]
                 }
             },
+            {
+                "message": {
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "retrieve_airline_policy",
+                                "arguments": {
+                                    "airline": "Aurora Airlines",
+                                    "incident": "flight_delay",
+                                },
+                            }
+                        }
+                    ]
+                }
+            },
         ]
         verify_rule.return_value = self.rights
         find_channel.return_value = self.channel
+        retrieve_policy.return_value = self.policy
 
         _, trace = research_case(self.extracted)
 
-        self.assertEqual(chat.call_count, 2)
+        self.assertEqual(chat.call_count, 3)
         second_messages = chat.call_args_list[1].args[0]["messages"]
         tool_messages = [
             message for message in second_messages if message["role"] == "tool"
@@ -550,7 +672,7 @@ class NativeToolCallingTests(unittest.TestCase):
         self.assertEqual(tool_messages[0]["tool_name"], "verify_air_passenger_rule")
         self.assertIn('"status": "online"', tool_messages[0]["content"])
         self.assertEqual(trace[0]["outcome"], "gemma_tool_calls")
-        self.assertEqual(trace[0]["tool_result_round_trips"], 1)
+        self.assertEqual(trace[0]["tool_result_round_trips"], 2)
 
     @patch("agent.find_claim_channel")
     @patch("agent.verify_air_passenger_rule")
@@ -671,6 +793,125 @@ class NativeToolCallingTests(unittest.TestCase):
         self.assertTrue(result["verified_live"])
         self.assertEqual(len(result["sources"]), 1)
         self.assertIn("passenger-rights/air", result["sources"][0]["link"])
+
+
+class AirportCoverageTests(unittest.TestCase):
+    """La table d'aéroports doit rester géographiquement correcte."""
+
+    def test_uk_airports_are_outside_the_eu261_scope_since_brexit(self):
+        for code in ("LHR", "LGW", "STN", "MAN", "EDI"):
+            self.assertFalse(AIRPORTS[code]["eu"], code)
+
+    def test_eea_and_switzerland_are_inside_the_scope(self):
+        for code in ("OSL", "KEF", "ZRH", "GVA"):
+            self.assertTrue(AIRPORTS[code]["eu"], code)
+
+    def test_added_airports_produce_plausible_distances(self):
+        # Références orthodromiques connues, tolérance 3 %.
+        for origin, destination, expected in (
+            ("CDG", "MUC", 682),
+            ("JFK", "LHR", 5540),
+            ("CDG", "LIS", 1470),
+        ):
+            distance = compute_distance(origin, destination)
+            self.assertAlmostEqual(distance, expected, delta=expected * 0.03)
+
+    def test_unknown_code_still_refuses_to_estimate(self):
+        with self.assertRaises(ValueError) as raised:
+            compute_distance("TLV", "CDG")
+        self.assertIn("TLV", str(raised.exception))
+
+    def test_coordinates_are_within_valid_ranges(self):
+        for code, airport in AIRPORTS.items():
+            self.assertTrue(-90 <= airport["lat"] <= 90, code)
+            self.assertTrue(-180 <= airport["lon"] <= 180, code)
+            self.assertIsInstance(airport["eu"], bool, code)
+
+
+class LocalAirlinePolicyTests(unittest.TestCase):
+    """Le corpus procédural local doit fonctionner sans réseau ni identité."""
+
+    def test_known_airline_returns_sourced_procedures(self):
+        result = retrieve_airline_policy(
+            {"airline": "Air France", "disruption_type": "delay"}
+        )
+
+        self.assertEqual(result["status"], "found")
+        self.assertEqual(result["company"], "Air France")
+        self.assertTrue(result["incident_specific"])
+        self.assertTrue(result["procedures"])
+        procedure = result["procedures"][0]
+        self.assertTrue(procedure["steps"])
+        self.assertTrue(procedure["sources"])
+        self.assertTrue(procedure["sources"][0]["link"].startswith("https://"))
+        self.assertTrue(procedure["sources"][0]["verified_on"])
+
+    def test_alias_matching_is_case_insensitive(self):
+        for alias in ("TAP", "tap air portugal", "  TAP  "):
+            result = retrieve_airline_policy(
+                {"airline": alias, "disruption_type": "cancellation"}
+            )
+            self.assertEqual(result["status"], "found", alias)
+            self.assertEqual(result["company"], "TAP Air Portugal", alias)
+
+    def test_unknown_airline_never_invents_a_procedure(self):
+        result = retrieve_airline_policy(
+            {"airline": "Aurora Airlines", "disruption_type": "delay"}
+        )
+
+        self.assertEqual(result["status"], "not_found")
+        self.assertEqual(result["procedures"], [])
+        self.assertIsNone(result["company"])
+
+    def test_freshness_is_reported_and_never_assumed(self):
+        result = retrieve_airline_policy(
+            {"airline": "easyJet", "disruption_type": "delay"}
+        )
+
+        self.assertIn(result["freshness"], {"fresh", "stale"})
+        self.assertTrue(result["verified_on"])
+
+    def test_minimized_arguments_are_accepted_without_disruption_type(self):
+        """Le dispatcher n'envoie que les arguments validés, sans le dossier."""
+        result = retrieve_airline_policy(
+            {"airline": "easyJet", "incident": "flight_delay"}
+        )
+
+        self.assertEqual(result["status"], "found")
+        self.assertTrue(result["incident_specific"])
+
+    def test_retrieval_never_touches_the_network(self):
+        with patch("tools.urllib.request.urlopen") as urlopen:
+            retrieve_airline_policy(
+                {"airline": "Air France", "disruption_type": "delay"}
+            )
+        urlopen.assert_not_called()
+
+    def test_context_derives_incident_and_carries_no_identity(self):
+        context = build_research_context(
+            {
+                "airline": "Air France",
+                "disruption_type": "cancellation",
+                "passenger_name": "MARTIN LEA",
+                "booking_reference": "FQ7T2K",
+            }
+        )
+
+        self.assertEqual(context["policy_incident"], "flight_cancellation")
+        self.assertNotIn("MARTIN LEA", str(context))
+        self.assertNotIn("FQ7T2K", str(context))
+
+    def test_tool_schema_is_declared_and_restricted(self):
+        declaration = next(
+            item["function"]
+            for item in RESEARCH_TOOL_DEFINITIONS
+            if item["function"]["name"] == "retrieve_airline_policy"
+        )
+        parameters = declaration["parameters"]
+
+        self.assertFalse(parameters["additionalProperties"])
+        self.assertEqual(set(parameters["required"]), {"airline", "incident"})
+        self.assertIn("flight_delay", parameters["properties"]["incident"]["enum"])
 
 
 if __name__ == "__main__":

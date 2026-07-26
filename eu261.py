@@ -19,12 +19,79 @@ RULESET = {
     ),
 }
 
-# Sous-ensemble volontairement réduit aux scénarios de démonstration.
+# `eu` signifie « dans le champ géographique du règlement 261/2004 », c'est-à-dire
+# l'Union européenne, l'Islande, la Norvège et la Suisse. Le Royaume-Uni en est
+# sorti au Brexit et relève désormais du UK261 : ses aéroports sont donc à False.
+# Cette table reste un sous-ensemble : un code absent produit `needs_information`,
+# jamais une estimation approximative.
 AIRPORTS = {
-    "ATH": {"lat": 37.9364, "lon": 23.9475, "eu": True},
+    # France
     "CDG": {"lat": 49.0097, "lon": 2.5479, "eu": True},
-    "JFK": {"lat": 40.6413, "lon": -73.7781, "eu": False},
+    "ORY": {"lat": 48.7233, "lon": 2.3794, "eu": True},
+    "NCE": {"lat": 43.6584, "lon": 7.2159, "eu": True},
+    "LYS": {"lat": 45.7256, "lon": 5.0811, "eu": True},
+    "MRS": {"lat": 43.4393, "lon": 5.2214, "eu": True},
+    "TLS": {"lat": 43.6293, "lon": 1.3638, "eu": True},
+    "BOD": {"lat": 44.8283, "lon": -0.7156, "eu": True},
+    "NTE": {"lat": 47.1532, "lon": -1.6107, "eu": True},
+    # Péninsule ibérique
     "LIS": {"lat": 38.7742, "lon": -9.1342, "eu": True},
+    "OPO": {"lat": 41.2481, "lon": -8.6814, "eu": True},
+    "MAD": {"lat": 40.4719, "lon": -3.5626, "eu": True},
+    "BCN": {"lat": 41.2974, "lon": 2.0833, "eu": True},
+    "AGP": {"lat": 36.6749, "lon": -4.4991, "eu": True},
+    "PMI": {"lat": 39.5517, "lon": 2.7388, "eu": True},
+    # Europe de l'Ouest et du Nord
+    "AMS": {"lat": 52.3105, "lon": 4.7683, "eu": True},
+    "BRU": {"lat": 50.9014, "lon": 4.4844, "eu": True},
+    "FRA": {"lat": 50.0379, "lon": 8.5622, "eu": True},
+    "MUC": {"lat": 48.3538, "lon": 11.7861, "eu": True},
+    "BER": {"lat": 52.3667, "lon": 13.5033, "eu": True},
+    "DUS": {"lat": 51.2895, "lon": 6.7668, "eu": True},
+    "VIE": {"lat": 48.1103, "lon": 16.5697, "eu": True},
+    "ZRH": {"lat": 47.4647, "lon": 8.5492, "eu": True},
+    "GVA": {"lat": 46.2381, "lon": 6.1090, "eu": True},
+    "DUB": {"lat": 53.4213, "lon": -6.2701, "eu": True},
+    "CPH": {"lat": 55.6180, "lon": 12.6560, "eu": True},
+    "ARN": {"lat": 59.6519, "lon": 17.9186, "eu": True},
+    "OSL": {"lat": 60.1939, "lon": 11.1004, "eu": True},
+    "HEL": {"lat": 60.3172, "lon": 24.9633, "eu": True},
+    "KEF": {"lat": 63.9850, "lon": -22.6056, "eu": True},
+    # Europe du Sud et de l'Est
+    "FCO": {"lat": 41.8003, "lon": 12.2389, "eu": True},
+    "MXP": {"lat": 45.6306, "lon": 8.7281, "eu": True},
+    "NAP": {"lat": 40.8843, "lon": 14.2908, "eu": True},
+    "ATH": {"lat": 37.9364, "lon": 23.9475, "eu": True},
+    "PRG": {"lat": 50.1008, "lon": 14.2600, "eu": True},
+    "WAW": {"lat": 52.1657, "lon": 20.9671, "eu": True},
+    "BUD": {"lat": 47.4369, "lon": 19.2556, "eu": True},
+    "OTP": {"lat": 44.5711, "lon": 26.0850, "eu": True},
+    # Royaume-Uni : hors champ EU261 depuis le Brexit.
+    "LHR": {"lat": 51.4700, "lon": -0.4543, "eu": False},
+    "LGW": {"lat": 51.1537, "lon": -0.1821, "eu": False},
+    "STN": {"lat": 51.8860, "lon": 0.2389, "eu": False},
+    "MAN": {"lat": 53.3537, "lon": -2.2750, "eu": False},
+    "EDI": {"lat": 55.9500, "lon": -3.3725, "eu": False},
+    # Hors UE
+    "JFK": {"lat": 40.6413, "lon": -73.7781, "eu": False},
+    "EWR": {"lat": 40.6895, "lon": -74.1745, "eu": False},
+    "BOS": {"lat": 42.3656, "lon": -71.0096, "eu": False},
+    "ORD": {"lat": 41.9742, "lon": -87.9073, "eu": False},
+    "MIA": {"lat": 25.7959, "lon": -80.2870, "eu": False},
+    "LAX": {"lat": 33.9416, "lon": -118.4085, "eu": False},
+    "SFO": {"lat": 37.6213, "lon": -122.3790, "eu": False},
+    "YUL": {"lat": 45.4706, "lon": -73.7408, "eu": False},
+    "YYZ": {"lat": 43.6777, "lon": -79.6248, "eu": False},
+    "IST": {"lat": 41.2753, "lon": 28.7519, "eu": False},
+    "DXB": {"lat": 25.2532, "lon": 55.3657, "eu": False},
+    "CMN": {"lat": 33.3675, "lon": -7.5898, "eu": False},
+    "TUN": {"lat": 36.8510, "lon": 10.2272, "eu": False},
+    "ALG": {"lat": 36.6910, "lon": 3.2154, "eu": False},
+    "DKR": {"lat": 14.6700, "lon": -17.0733, "eu": False},
+    "ABJ": {"lat": 5.2614, "lon": -3.9263, "eu": False},
+    "NRT": {"lat": 35.7720, "lon": 140.3929, "eu": False},
+    "SIN": {"lat": 1.3644, "lon": 103.9915, "eu": False},
+    "BKK": {"lat": 13.6900, "lon": 100.7501, "eu": False},
 }
 
 
