@@ -23,7 +23,12 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from eu261 import assess_ticket_reimbursement, qualify_case
+from eu261 import (
+    arrival_delay_from_times,
+    assess_ticket_reimbursement,
+    qualify_case,
+    resolve_airport,
+)
 from tools import (
     OFFICIAL_RIGHTS_URL,
     REGULATION_URL,
@@ -309,9 +314,15 @@ def _chat(payload: dict[str, Any], timeout: int = 300) -> dict[str, Any]:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    # Le transport et le décodage sont traités séparément : mélanger les deux
+    # laissait un JSONDecodeError traverser research_case, qui ne rattrape
+    # qu'AgentError, jusqu'à app.py qui le confondait avec une entrée invalide
+    # et répondait 400. Les deux pannes les plus probables — Ollama qui recharge
+    # un modèle, un proxy qui renvoie du HTML — ne déclenchaient donc pas le
+    # fallback censé être l'argument central de robustesse.
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.load(response)
+            raw = response.read()
     except urllib.error.HTTPError as exc:
         # HTTPError hérite de URLError : sans cette branche, une réponse 400
         # d'Ollama serait annoncée comme un serveur injoignable.
@@ -332,6 +343,21 @@ def _chat(payload: dict[str, Any], timeout: int = 300) -> dict[str, Any]:
         raise AgentError(
             "Ollama est inaccessible. Vérifie qu'il est lancé et que "
             f"`{MODEL}` est installé."
+        ) from exc
+    except TimeoutError as exc:
+        raise AgentError(
+            f"Ollama n'a pas répondu en {timeout} s. Le modèle est peut-être "
+            "en cours de chargement ; relance l'analyse."
+        ) from exc
+    except OSError as exc:
+        raise AgentError(f"La communication avec Ollama a échoué : {exc}") from exc
+
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise AgentError(
+            "Ollama a renvoyé une réponse illisible. Vérifie qu'aucun proxy ne "
+            f"s'interpose sur {OLLAMA_URL}."
         ) from exc
 
 
@@ -1096,6 +1122,72 @@ def _validate_claim(
     return claim, violations
 
 
+def _derive_arrival_delay(extracted: dict[str, Any]) -> dict[str, Any] | None:
+    """Calcule le retard depuis les horaires, ou recoupe celui qui est déclaré.
+
+    Les deux horaires d'arrivée figurent souvent dans le dossier sans que
+    personne ne s'en serve. Quand ils sont exploitables, ils valent mieux qu'une
+    durée déduite d'une phrase : ils viennent du document ou d'un relevé, pas
+    d'une formulation. En cas de désaccord avec la déclaration, on ne tranche
+    pas — on garde le chiffre déclaré et on signale l'écart.
+    """
+    destination, _ = resolve_airport(extracted.get("destination"))
+    minutes, problem = arrival_delay_from_times(
+        extracted.get("scheduled_arrival"),
+        extracted.get("actual_arrival"),
+        extracted.get("departure_date"),
+        destination,
+    )
+    if minutes is None:
+        return None
+
+    declared = extracted.get("arrival_delay_minutes")
+    if declared is None:
+        extracted["arrival_delay_minutes"] = minutes
+        extracted["delay_minutes"] = minutes
+        if not extracted.get("disruption_type") or extracted[
+            "disruption_type"
+        ] in {"unknown", None}:
+            extracted["disruption_type"] = "delay"
+        return {
+            "step": "derive_arrival_delay",
+            "state": "HORAIRES_RECOUPES",
+            "tool": "deterministic_rules",
+            "duration_seconds": 0,
+            "outcome": "computed",
+            "details": (
+                f"Retard de {minutes} min calculé depuis les horaires d'arrivée, "
+                "aucune durée n'ayant été déclarée."
+            ),
+        }
+
+    gap = abs(declared - minutes)
+    if gap <= 5:
+        return {
+            "step": "derive_arrival_delay",
+            "state": "HORAIRES_RECOUPES",
+            "tool": "deterministic_rules",
+            "duration_seconds": 0,
+            "outcome": "consistent",
+            "details": (
+                f"Durée déclarée ({declared} min) confirmée par les horaires "
+                f"({minutes} min)."
+            ),
+        }
+    return {
+        "step": "derive_arrival_delay",
+        "state": "HORAIRES_RECOUPES",
+        "tool": "deterministic_rules",
+        "duration_seconds": 0,
+        "outcome": "divergent",
+        "details": (
+            f"La durée déclarée ({declared} min) diffère du calcul par les "
+            f"horaires ({minutes} min). La déclaration est conservée ; l'écart "
+            "doit être vérifié avant envoi."
+        ),
+    }
+
+
 def process(
     document: Path,
     incident_text: str | None = None,
@@ -1110,6 +1202,7 @@ def process(
             for field in extracted.get("uncertain_fields", [])
             if field != "booking_reference_requires_confirmation"
         ]
+    timing_note = _derive_arrival_delay(extracted)
     route = route_case(extracted)
     result = {
         "model": MODEL,
@@ -1130,6 +1223,7 @@ def process(
                 "duration_seconds": round(duration, 2),
                 "outcome": "ok",
             },
+            *([timing_note] if timing_note else []),
             {
                 "step": "route_case",
                 "state": "VALIDATION_CHAMPS",

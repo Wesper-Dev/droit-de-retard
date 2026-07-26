@@ -6,6 +6,7 @@ import base64
 import binascii
 import json
 import tempfile
+import traceback
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -99,6 +100,9 @@ class DemoHandler(BaseHTTPRequestHandler):
         except (AgentError, json.JSONDecodeError, TypeError, ValueError) as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except Exception:
+            # Le message renvoie l'utilisateur vers le terminal : encore
+            # faut-il qu'on y écrive quelque chose.
+            traceback.print_exc()
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 {"error": "Erreur interne. Consulte le terminal de l'application."},

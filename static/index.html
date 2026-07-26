@@ -219,6 +219,9 @@
     not_found: ["Aucune fiche locale", "neutral"],
     not_covered: ["Droit non calculé par cet outil", "warn"],
     corrected: ["Lettre corrigée après recoupement", "warn"],
+    computed: ["Retard calculé depuis les horaires", ""],
+    consistent: ["Horaires cohérents avec la déclaration", ""],
+    divergent: ["Écart entre horaires et déclaration", "warn"],
     ok: ["Terminé", ""]
   }[status] || [String(status || "État inconnu"), "neutral"]);
 

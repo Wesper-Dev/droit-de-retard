@@ -18,7 +18,7 @@ objectifs : **une vitrine GitHub crédible**, et l'évaluation honnête d'une
 
 État réel du code : extraction multimodale Gemma 4 en JSON strict, function
 calling natif Ollama à trois outils, moteur EU261 déterministe (61 aéroports),
-corpus procédural local de 3 compagnies, dictée vocale locale, 76 tests.
+corpus procédural local de 3 compagnies, dictée vocale locale, 85 tests.
 Dépôt personnel : `github.com/Wesper-Dev/droit-de-retard`.
 
 ---
@@ -187,7 +187,7 @@ pas précédée d'un contexte horaire (`à`, `vers`, `au lieu de`, `prévu à`) 
 durées en toutes lettres sont converties avant analyse (« trois heures et
 demie » → 210). Sept tests.
 
-### 4.3 ⚠️ `scheduled_arrival` / `actual_arrival` extraits et lus par personne
+### 4.3 ~~`scheduled_arrival` / `actual_arrival` extraits et lus par personne~~ — corrigé
 
 Les deux horaires qui donneraient le retard par soustraction dorment dans le
 JSON pendant que le regex se trompe.
@@ -197,7 +197,25 @@ d'`AIRPORTS` et normaliser en UTC avec `zoneinfo`. Sans ça, un CDG–LIS a une
 heure d'écart artificielle et un passage de minuit donne un retard négatif.
 C'est le prérequis de **tout** ce qui touche aux horaires.
 
-### 4.4 ⚠️ `_chat` ne respecte pas son contrat d'erreur
+**Fait.** Les 61 aéroports portent un identifiant IANA, tous résolus par
+`zoneinfo`. `arrival_delay_from_times` retourne `(minutes, motif)` et refuse
+plutôt que de deviner : horaire illisible, date absente, fuseau inconnu ou
+écart hors bornes donnent `None` avec un motif. Le passage de minuit est traité
+(23 h 50 → 01 h 30 = 100 min).
+
+Nuance découverte en écrivant les tests : les deux horaires étant exprimés dans
+le **même** fuseau, leur écart n'en dépend pas — sauf une nuit de changement
+d'heure. Et là, CPython piège : quand deux `datetime` partagent le même objet
+`tzinfo`, la soustraction est faite sur les horloges **sans corriger le
+décalage**. Le 25 octobre 2026 à Paris, 01 h 30 → 03 h 00 donnait 90 minutes
+au lieu de 150. La conversion en UTC avant soustraction règle le cas, et un
+test le verrouille.
+
+Le pipeline calcule désormais le retard quand aucune durée n'est déclarée, et
+**recoupe** sans jamais écraser quand une durée l'est : un écart supérieur à
+5 minutes produit une étape de trace `HORAIRES_RECOUPES` en `divergent`.
+
+### 4.4 ~~`_chat` ne respecte pas son contrat d'erreur~~ — corrigé
 
 `json.load(response)` est dans le `try` alors que les `except` ne couvrent que
 `HTTPError` et `URLError`. Un `JSONDecodeError` traverse `research_case` (qui
@@ -209,6 +227,14 @@ l'argument central de robustesse.
 
 *Correctif :* ajouter `json.JSONDecodeError`, `TimeoutError`, `OSError` ; un
 test par famille.
+
+**Fait.** Transport et décodage sont désormais séparés dans `_chat` : la
+réponse est lue en octets, puis décodée dans un second bloc. Quatre familles
+d'erreurs produisent un `AgentError` explicite — refus HTTP, serveur
+injoignable, dépassement de délai (avec la durée), réponse illisible (avec
+l'URL, pour désigner un proxy). Trois tests. `app.py` écrit en plus un
+`traceback` avant son 500, dont le message invitait à consulter un terminal où
+rien n'était écrit.
 
 ### 4.5 ⚠️ `process()` perd une question
 

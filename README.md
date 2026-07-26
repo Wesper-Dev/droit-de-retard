@@ -146,7 +146,7 @@ n'est pas renseigné, le résultat reste `needs_information` et l'agent pose la
 question ; il ne déduit pas un remboursement du seul retard. Aurora Airlines
 étant fictive, le prototype n'invente aucun formulaire réel.
 
-Lors d'une exécution en ligne validée, Gemma a produit les deux `tool_calls`,
+Lors d'une exécution en ligne validée, Gemma a produit les trois `tool_calls`,
 SerpApi a répondu, la qualification interne a pris le statut `likely` pour
 250 € potentiels et le pipeline a duré environ 51 secondes. Cette mesure décrit
 un passage sur la configuration de démonstration, pas une garantie de latence
@@ -158,7 +158,7 @@ ou d'éligibilité.
 .venv/bin/python -m unittest -v test_agent.py
 ```
 
-Les 76 tests couvrent le routage, la normalisation des durées, les seuils, les
+Les 85 tests couvrent le routage, la normalisation des durées, les seuils, les
 tranches de distance, le remboursement séparé et la confidentialité des
 recherches. Ils vérifient également les schémas d'outils, le parsing de
 `tool_calls`, le retour `role=tool`, le rejet des fonctions ou arguments hors
@@ -174,8 +174,12 @@ Le document, le nom et la référence de réservation sont traités par Ollama s
 la machine. Gemma ne reçoit pour la sélection d'outils que le type d'incident,
 le trajet, les durées utiles et la compagnie. Les recherches SerpApi excluent
 le nom du passager et la référence. Sans clé, en cas de quota ou de panne
-réseau, les sources de référence sont affichées comme non vérifiées, le verdict
-reste conditionnel et aucun montant n'est affirmé dans la lettre.
+réseau, les sources de référence sont affichées comme non vérifiées et la trace
+le signale. Le verdict, lui, ne dépend pas du réseau : il découle des faits
+déclarés et de la cause. Ce qui peut le rendre conditionnel, c'est une cause
+susceptible de relever des circonstances extraordinaires, jamais une panne de
+connexion. La lettre produite est enfin recoupée avec le moteur : un montant ou
+une URL que le modèle aurait inventés sont corrigés ou signalés.
 
 ## Positionnement
 

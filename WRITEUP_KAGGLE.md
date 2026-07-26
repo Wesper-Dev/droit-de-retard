@@ -196,7 +196,7 @@ another, `temperature=0`, `think=false`, wall clock via `time.perf_counter()`.
 | Per-stage cost | Vision / tool selection / drafting | 22.32 s / 3.78 s / 21.22 s on average |
 | SerpApi online | Official live sources and claim channel | Validated — 2 sources kept, both under the official Your Europe reference |
 | Forced tool failure | Recovery state and continued output | Validated — `MODE_DEGRADE`, `verified_live=false`, conditional letter asserting no amount, 47.44 s |
-| Native function calling | Three selected tools, validated args, test suite | Validated — 3 tool calls per run, 0 rejected, 2 tool-result round trips, 76/76 tests |
+| Native function calling | Three selected tools, validated args, test suite | Validated — 3 tool calls per run, 0 rejected, 2 tool-result round trips, 85/85 tests |
 | Early-exit branches | Cost of refusing rather than drafting | Ticket with no incident proof: 26.54 s to `ASK_USER`; +2 h 10 delay: 28.49 s to `EXPLICATION_REFUS`, no letter |
 | Agent vs mono-prompt baseline | Accuracy, unsupported facts, latency | **Not measured** — see below |
 

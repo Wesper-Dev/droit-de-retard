@@ -5,10 +5,12 @@ import io
 import unittest
 from unittest.mock import patch
 import wave
+from zoneinfo import ZoneInfo
 
 from agent import (
     AgentError,
     CLAIM_SCHEMA,
+    _chat,
     _validate_claim,
     draft_claim,
     merge_incident_statement,
@@ -19,6 +21,7 @@ from agent import (
 )
 from eu261 import (
     AIRPORTS,
+    arrival_delay_from_times,
     assess_ticket_reimbursement,
     classify_cause,
     compensation_amount,
@@ -1127,6 +1130,136 @@ class IncidentStatementRobustnessTests(unittest.TestCase):
             extracted = self.parse(statement)
             self.assertEqual(extracted["departure_delay_minutes"], 300, statement)
             self.assertEqual(extracted["arrival_delay_minutes"], 150, statement)
+
+
+class ArrivalTimingTests(unittest.TestCase):
+    """Les horaires d'arrivée valent mieux qu'une durée déduite d'une phrase."""
+
+    def test_delay_is_computed_from_local_times(self):
+        minutes, problem = arrival_delay_from_times(
+            "20:25", "23:50", "2026-06-11", "LIS"
+        )
+
+        self.assertEqual(minutes, 205)
+        self.assertIsNone(problem)
+
+    def test_arrival_after_midnight_is_the_next_day(self):
+        minutes, _ = arrival_delay_from_times("23:50", "01:30", "2026-06-11", "LIS")
+
+        self.assertEqual(minutes, 100)
+
+    def test_daylight_saving_night_is_measured_in_real_time(self):
+        """CPython soustrait naïvement deux datetime au même tzinfo.
+
+        Sans conversion en UTC, la nuit du passage à l'heure d'hiver renverrait
+        90 minutes là où le passager en a réellement attendu 150.
+        """
+        minutes, _ = arrival_delay_from_times("01:30", "03:00", "2026-10-25", "CDG")
+
+        self.assertEqual(minutes, 150)
+        # Même horloge, une nuit ordinaire : l'écart reste de 90 minutes.
+        ordinary, _ = arrival_delay_from_times("01:30", "03:00", "2026-06-11", "LIS")
+        self.assertEqual(ordinary, 90)
+
+    def test_unusable_inputs_are_reported_not_guessed(self):
+        for scheduled, actual, date, destination in (
+            ("pas une heure", "23:50", "2026-06-11", "LIS"),
+            ("20:25", "23:50", None, "LIS"),
+            ("20:25", "23:50", "2026-06-11", "XXX"),
+            ("25:99", "23:50", "2026-06-11", "LIS"),
+        ):
+            minutes, problem = arrival_delay_from_times(
+                scheduled, actual, date, destination
+            )
+            self.assertIsNone(minutes)
+            self.assertTrue(problem)
+
+    def test_every_airport_carries_a_valid_timezone(self):
+        for code, airport in AIRPORTS.items():
+            self.assertIn("tz", airport, code)
+            ZoneInfo(airport["tz"])
+
+    @patch("agent.draft_claim")
+    @patch("agent.research_case")
+    @patch("agent.extract_flight")
+    def test_declared_delay_is_kept_but_divergence_is_traced(
+        self, extract_flight, research_case_mock, draft_claim
+    ):
+        extract_flight.return_value = (
+            {
+                **COMPLETE_FLIGHT,
+                "airline": "Air France",
+                "disruption_type": "delay",
+                "delay_minutes": 205,
+                "arrival_delay_minutes": 205,
+                "departure_delay_minutes": None,
+                "scheduled_arrival": "20:25",
+                # Le passager a déclaré 205 min, les horaires en donnent 100.
+                "actual_arrival": "22:05",
+                "trip_completed": None,
+                "uncertain_fields": [],
+            },
+            1.0,
+        )
+        research_case_mock.return_value = (
+            {
+                "rights": {"reference_source_reachable": True, "sources": []},
+                "claim_channel": {"status": "demo_carrier"},
+                "airline_policy": {"status": "not_found"},
+            },
+            [],
+        )
+        draft_claim.return_value = (
+            {
+                "estimated_compensation_eur": 250,
+                "letter_body": "Corps.",
+                "letter_subject": "Objet",
+                "checklist": [],
+                "warnings": [],
+            },
+            1.0,
+        )
+
+        result = process(__import__("pathlib").Path("unused.pdf"))
+
+        # La déclaration du voyageur n'est jamais écrasée en silence.
+        self.assertEqual(result["extraction"]["arrival_delay_minutes"], 205)
+        timing = [s for s in result["trace"] if s["state"] == "HORAIRES_RECOUPES"]
+        self.assertEqual(len(timing), 1)
+        self.assertEqual(timing[0]["outcome"], "divergent")
+
+
+class ChatErrorContractTests(unittest.TestCase):
+    """Une panne d'Ollama ne doit jamais passer pour une faute de l'utilisateur."""
+
+    def test_unreadable_response_becomes_an_agent_error(self):
+        class FakeResponse:
+            def read(self):
+                return b"<html>proxy</html>"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        with patch("agent.urllib.request.urlopen", return_value=FakeResponse()):
+            with self.assertRaises(AgentError) as raised:
+                _chat({"model": "x"})
+
+        self.assertIn("illisible", str(raised.exception))
+
+    def test_timeout_becomes_an_agent_error(self):
+        with patch("agent.urllib.request.urlopen", side_effect=TimeoutError()):
+            with self.assertRaises(AgentError) as raised:
+                _chat({"model": "x"}, timeout=7)
+
+        self.assertIn("7 s", str(raised.exception))
+
+    def test_socket_failure_becomes_an_agent_error(self):
+        with patch("agent.urllib.request.urlopen", side_effect=OSError("broken pipe")):
+            with self.assertRaises(AgentError):
+                _chat({"model": "x"})
 
 
 class ClaimSchemaTests(unittest.TestCase):
