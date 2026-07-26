@@ -25,6 +25,7 @@ from eu261 import (
     compute_distance,
     qualify_case,
     qualify_delay,
+    resolve_airport,
 )
 from tools import (
     RESEARCH_TOOL_DEFINITIONS,
@@ -1008,6 +1009,124 @@ class ClaimValidationTests(unittest.TestCase):
 
         self.assertIsNone(claim["estimated_compensation_eur"])
         self.assertTrue(violations)
+
+
+class AirportResolutionTests(unittest.TestCase):
+    """Un libellé libre ne doit jamais produire un aéroport deviné."""
+
+    def test_single_referenced_code_is_resolved(self):
+        for label, expected in (
+            ("Paris CDG", "CDG"),
+            ("BARCELONE T1 (BCN)", "BCN"),
+            ("Munich (MUC)", "MUC"),
+            ("New York JFK", "JFK"),
+            ("Francfort FRA", "FRA"),
+        ):
+            self.assertEqual(resolve_airport(label)[0], expected, label)
+
+    def test_country_code_after_a_comma_is_not_an_airport(self):
+        """« Nice NCE, FRA » désignait Francfort : +150 € silencieusement."""
+        code, problem = resolve_airport("Nice NCE, FRA")
+
+        self.assertEqual(code, "NCE")
+        self.assertIsNone(problem)
+
+    def test_several_referenced_codes_ask_instead_of_guessing(self):
+        code, problem = resolve_airport("Vol CDG puis MUC")
+
+        self.assertIsNone(code)
+        self.assertIn("plusieurs aéroports", problem)
+
+    def test_unreferenced_code_is_named_in_the_reason(self):
+        code, problem = resolve_airport("Tel Aviv TLV")
+
+        self.assertIsNone(code)
+        self.assertIn("TLV", problem)
+
+    def test_label_without_any_code_is_reported(self):
+        code, problem = resolve_airport("Aéroport Charles de Gaulle, Paris, FRA")
+
+        self.assertIsNone(code)
+        self.assertIn("Aucun code IATA", problem)
+
+    def test_ambiguous_label_does_not_reach_the_distance_computation(self):
+        result = qualify_delay(
+            {
+                "origin": "Vol CDG puis MUC",
+                "destination": "Lisbonne LIS",
+                "disruption_type": "delay",
+                "arrival_delay_minutes": 205,
+            }
+        )
+
+        self.assertEqual(result["status"], "needs_information")
+        self.assertNotIn("compensation_eur", result)
+
+
+class IncidentStatementRobustnessTests(unittest.TestCase):
+    """Le parseur déterministe face à des formulations non coopératives."""
+
+    @staticmethod
+    def parse(statement: str) -> dict:
+        extracted = {
+            "disruption_type": None,
+            "delay_minutes": None,
+            "arrival_delay_minutes": None,
+            "departure_delay_minutes": None,
+            "trip_completed": None,
+            "disruption_cause": None,
+            "evidence": [],
+        }
+        merge_incident_statement(extracted, statement)
+        return extracted
+
+    def test_negation_does_not_create_a_cancellation(self):
+        extracted = self.parse("mon vol n'a pas été annulé, juste 3h30 de retard")
+
+        self.assertEqual(extracted["disruption_type"], "delay")
+        self.assertEqual(extracted["arrival_delay_minutes"], 210)
+
+    def test_negated_denied_boarding_is_ignored(self):
+        extracted = self.parse(
+            "on ne m'a pas refusé l'embarquement, le vol avait 4 h de retard"
+        )
+
+        self.assertEqual(extracted["disruption_type"], "delay")
+
+    def test_clock_time_is_not_a_duration(self):
+        extracted = self.parse("arrivée 23h50 au lieu de 20h25")
+
+        self.assertIsNone(extracted["arrival_delay_minutes"])
+        self.assertIsNone(extracted["departure_delay_minutes"])
+
+    def test_clock_time_after_a_real_delay_is_not_absorbed(self):
+        extracted = self.parse("3h30 de retard, je suis arrivé à 23h50")
+
+        self.assertEqual(extracted["arrival_delay_minutes"], 210)
+
+    def test_written_out_durations_are_understood(self):
+        for statement, expected in (
+            ("trois heures et demie de retard", 210),
+            ("deux heures de retard", 120),
+            ("quatre heures et quart de retard", 255),
+        ):
+            self.assertEqual(
+                self.parse(statement)["arrival_delay_minutes"], expected, statement
+            )
+
+    def test_a_duration_without_delay_marker_is_ignored(self):
+        extracted = self.parse("le vol dure 2 h 30")
+
+        self.assertIsNone(extracted["arrival_delay_minutes"])
+
+    def test_both_delays_survive_a_missing_apostrophe(self):
+        for statement in (
+            "Le vol avait 5 h de retard au départ et 2 h 30 à l'arrivée.",
+            "Le vol avait 5 h de retard au départ et 2 h 30 à l arrivée.",
+        ):
+            extracted = self.parse(statement)
+            self.assertEqual(extracted["departure_delay_minutes"], 300, statement)
+            self.assertEqual(extracted["arrival_delay_minutes"], 150, statement)
 
 
 class ClaimSchemaTests(unittest.TestCase):

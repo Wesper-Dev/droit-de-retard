@@ -95,10 +95,67 @@ AIRPORTS = {
 }
 
 
+# Codes pays ISO-3166 alpha-3 qui peuvent apparaître en fin de libellé. `FRA`
+# est le cas critique : Francfort en IATA, la France en code pays. Sans cette
+# liste, « Nice NCE, FRA » se résout en Francfort.
+ISO_COUNTRY_CODES = frozenset(
+    """ABW AFG AGO ALB AND ARE ARG ARM AUS AUT AZE BEL BEN BGD BGR BHR BIH BLR
+    BOL BRA BRB CAN CHE CHL CHN CIV CMR COL CRI CUB CYP CZE DEU DNK DOM DZA ECU
+    EGY ESP EST ETH FIN FRA GBR GEO GHA GRC GTM HKG HND HRV HUN IDN IND IRL IRN
+    IRQ ISL ISR ITA JAM JOR JPN KAZ KEN KOR KWT LBN LKA LTU LUX LVA MAR MDA MEX
+    MKD MLT MNE MYS NGA NLD NOR NPL NZL OMN PAK PAN PER PHL POL PRT PRY QAT ROU
+    RUS RWA SAU SEN SGP SRB SVK SVN SWE SYR TCD THA TUR TWN TZA UKR URY USA UZB
+    VEN VNM ZAF""".split()
+)
+
+
+def iata_candidates(value: str | None) -> list[str]:
+    """Groupes de trois lettres du libellé, hors codes pays en position finale.
+
+    Un libellé de la forme « Ville XXX, PAYS » est fréquent en sortie de modèle.
+    Le code pays est écarté seulement lorsqu'il suit une virgule, afin de ne pas
+    disqualifier un aéroport dont le code coïncide avec un code pays cité seul.
+    """
+    text = (value or "").upper()
+    candidates = []
+    for match in re.finditer(r"\b[A-Z]{3}\b", text):
+        code = match.group(0)
+        preceded_by_comma = re.search(r",\s*$", text[: match.start()]) is not None
+        if code in ISO_COUNTRY_CODES and preceded_by_comma:
+            continue
+        candidates.append(code)
+    return candidates
+
+
+def resolve_airport(value: str | None) -> tuple[str | None, str | None]:
+    """Résout un libellé libre en un seul aéroport référencé.
+
+    Retourne `(code, motif_de_rejet)`. Le libellé vient du modèle en texte
+    libre : « Nice NCE, FRA » contient deux codes référencés, et retenir le
+    dernier ferait passer un Nice–Lisbonne de 250 € à un Francfort–Lisbonne de
+    400 €, silencieusement et du côté qui sur-réclame. En cas d'ambiguïté, on
+    pose une question au lieu de choisir.
+    """
+    candidates = iata_candidates(value)
+    known: list[str] = []
+    for code in candidates:
+        if code in AIRPORTS and code not in known:
+            known.append(code)
+    if len(known) == 1:
+        return known[0], None
+    if len(known) > 1:
+        return None, (
+            "Le libellé contient plusieurs aéroports référencés "
+            f"({', '.join(known)}) : précise lequel correspond au vol."
+        )
+    if candidates:
+        return None, f"Aéroport non référencé : {candidates[-1]}"
+    return None, "Aucun code IATA à trois lettres n'a été trouvé."
+
+
 def extract_iata(value: str | None) -> str | None:
-    """Retourne le dernier code IATA à trois lettres trouvé."""
-    matches = re.findall(r"\b[A-Z]{3}\b", (value or "").upper())
-    return matches[-1] if matches else None
+    """Retourne l'unique aéroport référencé du libellé, sinon None."""
+    return resolve_airport(value)[0]
 
 
 def compute_distance(origin: str, destination: str) -> float:
@@ -201,12 +258,16 @@ def qualify_delay(
     extracted: dict[str, Any], *, reference_source_reachable: bool = False
 ) -> dict[str, Any]:
     """Qualifie un retard à l'arrivée sans déléguer le calcul au modèle."""
-    origin = extract_iata(extracted.get("origin"))
-    destination = extract_iata(extracted.get("destination"))
+    origin, origin_problem = resolve_airport(extracted.get("origin"))
+    destination, destination_problem = resolve_airport(extracted.get("destination"))
     if not origin or not destination:
+        problems = [
+            f"Départ : {origin_problem}" if origin_problem else "",
+            f"Arrivée : {destination_problem}" if destination_problem else "",
+        ]
         return {
             "status": "needs_information",
-            "reason": "Codes IATA de départ ou d'arrivée manquants.",
+            "reason": " ".join(problem for problem in problems if problem),
             "ruleset": RULESET,
         }
     try:

@@ -158,7 +158,7 @@ ou d'éligibilité.
 .venv/bin/python -m unittest -v test_agent.py
 ```
 
-Les 63 tests couvrent le routage, la normalisation des durées, les seuils, les
+Les 76 tests couvrent le routage, la normalisation des durées, les seuils, les
 tranches de distance, le remboursement séparé et la confidentialité des
 recherches. Ils vérifient également les schémas d'outils, le parsing de
 `tool_calls`, le retour `role=tool`, le rejet des fonctions ou arguments hors
@@ -201,7 +201,12 @@ Ces services restent plus complets pour les relances et la représentation.
 
 - règles volontairement simplifiées pour les scénarios de démonstration ;
 - 61 aéroports référencés dans le calcul local : un code absent produit
-  `needs_information`, jamais une distance approximative ;
+  `needs_information`, jamais une distance approximative. Un libellé contenant
+  plusieurs aéroports référencés déclenche une question plutôt qu'un choix
+  arbitraire ;
+- seul le retard à l'arrivée est chiffré. Une annulation ou un refus
+  d'embarquement renvoie `not_covered` : le droit existe peut-être, cet outil
+  ne le calcule pas et le dit au lieu de laisser croire le dossier complet ;
 - le Royaume-Uni est traité hors champ EU261 depuis le Brexit ; le régime
   UK261 n'est pas implémenté ;
 - aucune vérification historique fiable d'un vol ou transporteur fictif ;

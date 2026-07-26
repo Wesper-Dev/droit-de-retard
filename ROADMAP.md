@@ -18,7 +18,7 @@ objectifs : **une vitrine GitHub crédible**, et l'évaluation honnête d'une
 
 État réel du code : extraction multimodale Gemma 4 en JSON strict, function
 calling natif Ollama à trois outils, moteur EU261 déterministe (61 aéroports),
-corpus procédural local de 3 compagnies, dictée vocale locale, 47 tests.
+corpus procédural local de 3 compagnies, dictée vocale locale, 76 tests.
 Dépôt personnel : `github.com/Wesper-Dev/droit-de-retard`.
 
 ---
@@ -134,7 +134,7 @@ ajouté sans borne.
 
 ## 4. Dette technique — à traiter avant d'ajouter quoi que ce soit
 
-### 4.1 ✅ `extract_iata` prend le dernier code à trois lettres
+### 4.1 ~~`extract_iata` prend le dernier code à trois lettres~~ — corrigé
 
 ```
 extract_iata('Nice NCE, FRA')                    -> 'FRA'
@@ -146,14 +146,20 @@ FRA -> LIS = 1874 km -> 400 €      même vol, libellé différent, +150 €
 ```
 
 `origin` vient de Gemma en texte libre. Défaillance silencieuse, plausible, et
-du côté qui **sur-réclame**. Aucun des 47 tests ne couvre une chaîne à
-plusieurs tokens majuscules.
+du côté qui **sur-réclame**.
 
 *Correctif :* n'accepter un code que s'il appartient à `AIRPORTS` **et** est
 unique, sinon `None` → `needs_information` ; ignorer les faux amis ISO-3166
 après virgule. 15 cas paramétrés. Une heure.
 
-### 4.2 ✅ `merge_incident_statement` ignore la négation
+**Fait.** `resolve_airport` remplace la devinette et retourne `(code, motif)` :
+un seul aéroport référencé → il est retenu ; plusieurs → question au lieu de
+choix ; aucun → le code inconnu est nommé dans le message. Une table ISO-3166
+écarte un code pays qui suit une virgule, si bien que `Nice NCE, FRA` résout
+désormais **NCE** et non Francfort, tandis que `Francfort FRA` continue de
+résoudre FRA. Six tests.
+
+### 4.2 ~~`merge_incident_statement` ignore la négation~~ — corrigé
 
 ```
 "mon vol n'a pas été annulé, juste 3h30 de retard"  ->  cancellation
@@ -169,6 +175,17 @@ explicite (`de retard`, `retardé de`), rejeter tout match précédé de
 rien écrire** en cas de matches multiples non attribuables.
 **Ne pas remplacer par un appel Gemma** : +20 s de latence et une surface
 d'hallucination pour un problème purement lexical.
+
+**Fait, en Python déterministe.** La négation est cherchée dans la seule
+proposition qui précède le marqueur, tronquée aux ruptures (`,`, `mais`,
+`juste`) : « mon vol n'a pas été annulé, juste 3 h 30 de retard » donne
+maintenant `delay`/210 au lieu de `cancellation`. Une durée n'est retenue que
+si un marqueur de retard figure dans son voisinage immédiat et qu'elle n'est
+pas précédée d'un contexte horaire (`à`, `vers`, `au lieu de`, `prévu à`) :
+« arrivée 23 h 50 au lieu de 20 h 25 » ne produit plus rien, et
+« 3 h 30 de retard, je suis arrivé à 23 h 50 » donne 210 et non 1430. Les
+durées en toutes lettres sont converties avant analyse (« trois heures et
+demie » → 210). Sept tests.
 
 ### 4.3 ⚠️ `scheduled_arrival` / `actual_arrival` extraits et lus par personne
 

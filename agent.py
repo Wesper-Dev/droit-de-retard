@@ -490,19 +490,75 @@ def extract_flight(
     return extracted, duration
 
 
+# Une négation ne porte que sur sa propre proposition : dans « mon vol n'a pas
+# été annulé, juste 3 h de retard », le « pas » nie l'annulation, pas le retard.
+NEGATION_MARKERS = ("pas ", "plus ", "jamais", "sans ", "aucun")
+CLAUSE_BREAKS = (",", ";", ".", " mais ", " juste ", " seulement ", " par contre ")
+
+# Une heure d'horloge n'est pas une durée. « arrivé à 23 h 50 » ne doit jamais
+# produire 1430 minutes de retard.
+CLOCK_CONTEXT = re.compile(r"\b(?:à|a|vers|au lieu de|prévue?\s+à|prevue?\s+a)\s*$")
+DELAY_MARKERS = ("retard", "décalage", "decalage")
+
+WORDED_HOURS = {
+    "une": 1, "un": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5,
+    "six": 6, "sept": 7, "huit": 8, "neuf": 9, "dix": 10, "onze": 11,
+    "douze": 12,
+}
+WORDED_DURATION = re.compile(
+    r"\b(" + "|".join(WORDED_HOURS) + r")\s+heures?"
+    r"(?:\s+et\s+(demie?|quart))?",
+)
+
+
+def _clause_before(text: str, position: int, window: int = 48) -> str:
+    """Fragment qui précède, tronqué à la dernière rupture de proposition."""
+    fragment = text[max(0, position - window) : position]
+    cut = 0
+    for separator in CLAUSE_BREAKS:
+        index = fragment.rfind(separator)
+        if index >= 0:
+            cut = max(cut, index + len(separator))
+    return fragment[cut:]
+
+
+def _find_unnegated(text: str, marker: str) -> int:
+    """Position du premier marqueur qui n'est pas nié dans sa proposition."""
+    start = 0
+    while True:
+        index = text.find(marker, start)
+        if index < 0:
+            return -1
+        clause = _clause_before(text, index)
+        if not any(negation in clause for negation in NEGATION_MARKERS):
+            return index
+        start = index + 1
+
+
+def _spell_out_durations(text: str) -> str:
+    """Convertit « trois heures et demie » en « 3 h 30 » avant l'analyse."""
+
+    def replace(match: re.Match[str]) -> str:
+        hours = WORDED_HOURS[match.group(1)]
+        extra = {"demi": 30, "demie": 30, "quart": 15}.get(match.group(2) or "", 0)
+        return f"{hours} h {extra}" if extra else f"{hours} h"
+
+    return WORDED_DURATION.sub(replace, text)
+
+
 def merge_incident_statement(extracted: dict[str, Any], statement: str) -> None:
     """Normalise les faits simples déclarés sans ajouter un tour de modèle."""
-    normalized = statement.casefold()
+    normalized = _spell_out_durations(statement.casefold())
     extracted["trip_completed"] = None
-    if "annul" in normalized:
+    if _find_unnegated(normalized, "annul") >= 0:
         extracted["disruption_type"] = "cancellation"
-    elif "refus" in normalized and "embarquement" in normalized:
+    elif _find_unnegated(normalized, "refus") >= 0 and "embarquement" in normalized:
         extracted["disruption_type"] = "denied_boarding"
-    elif "correspondance" in normalized and (
+    elif _find_unnegated(normalized, "correspondance") >= 0 and (
         "rat" in normalized or "manqu" in normalized
     ):
         extracted["disruption_type"] = "missed_connection"
-    elif "retard" in normalized:
+    elif _find_unnegated(normalized, "retard") >= 0:
         extracted["disruption_type"] = "delay"
 
     duration_pattern = re.compile(
@@ -510,20 +566,34 @@ def merge_incident_statement(extracted: dict[str, Any], statement: str) -> None:
         r"(?:\s*(\d+)\s*(?:min(?:ute)?s?)?)?"
         r"|(\d+)\s*min(?:ute)?s?)"
     )
-    duration_matches = list(duration_pattern.finditer(normalized))
-    for match in duration_matches:
+    # Premier passage : ne retenir que les durées réellement présentées comme un
+    # retard. Le compte des durées retenues pilote ensuite l'attribution, sinon
+    # une heure d'horloge écartée fausserait le raisonnement sur les positions.
+    duration_matches = []
+    for match in duration_pattern.finditer(normalized):
         hours = int(match.group(1) or 0)
         minutes = int(match.group(2) or match.group(3) or 0)
         delay_minutes = hours * 60 + minutes
-        if "retard" not in normalized or not 0 < delay_minutes < 24 * 60:
+        if not 0 < delay_minutes < 24 * 60:
             continue
+        context_before = normalized[max(0, match.start() - 20) : match.start()]
+        if CLOCK_CONTEXT.search(context_before):
+            continue
+        neighbourhood = (
+            normalized[max(0, match.start() - 45) : match.start()]
+            + normalized[match.end() : match.end() + 45]
+        )
+        if not any(marker in neighbourhood for marker in DELAY_MARKERS):
+            continue
+        duration_matches.append((match, delay_minutes))
 
+    for match, delay_minutes in duration_matches:
         before = normalized[max(0, match.start() - 45) : match.start()]
         after = normalized[match.end() : match.end() + 45]
         trailing_marker = re.match(
             r"\s*(?:de\s+retard\s*)?"
             r"(?:(?:au\s+)?(?:départ|depart|décoll\w*|decoll\w*)"
-            r"|(?:à|a)\s+(?:l['’]\s*)?(?:arriv\w*|atterr\w*))",
+            r"|(?:à|a)\s+(?:l['’]?\s*)?(?:arriv\w*|atterr\w*))",
             after,
         )
         trailing_text = trailing_marker.group(0) if trailing_marker else ""
