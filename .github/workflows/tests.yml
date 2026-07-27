@@ -36,8 +36,13 @@ jobs:
 
           STDLIB = set(sys.stdlib_module_names)
           # Tout module du dépôt est local : on ne code aucune liste en dur,
-          # sinon le contrôle casse au premier fichier ajouté.
+          # sinon le contrôle casse au premier fichier ajouté. Les paquets
+          # comptent aussi — un dossier portant un __init__.py est importable
+          # sous son nom de dossier, qui n'apparaît dans aucun nom de fichier.
           LOCAL = {path.stem for path in pathlib.Path().rglob("*.py")}
+          LOCAL |= {
+              init.parent.name for init in pathlib.Path().rglob("__init__.py")
+          }
           faulty = []
           for path in sorted(pathlib.Path().glob("*.py")):
               tree = ast.parse(path.read_text(encoding="utf-8"))
