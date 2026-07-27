@@ -527,6 +527,20 @@ CLAUSE_BREAKS = (",", ";", ".", " mais ", " juste ", " seulement ", " par contre
 CLOCK_CONTEXT = re.compile(r"\b(?:à|a|vers|au lieu de|prévue?\s+à|prevue?\s+a)\s*$")
 DELAY_MARKERS = ("retard", "décalage", "decalage")
 
+# Amorces de cause cherchées dans la déclaration. L'ordre va du plus spécifique
+# au plus générique : le fragment conservé part du marqueur trouvé, donc une
+# amorce trop large tronquerait le détail qui porte l'effet juridique.
+CAUSE_MARKERS = (
+    "problème technique", "probleme technique", "problème mécanique",
+    "probleme mecanique", "panne", "maintenance",
+    "grève", "greve",
+    "météo", "meteo", "tempête", "tempete", "orage", "neige", "brouillard",
+    "collision aviaire", "oiseau",
+    "surbooking", "surréservation", "surreservation",
+    "sûreté", "surete", "sécurité aéroportuaire", "securite aeroportuaire",
+    "contrôle aérien", "controle aerien",
+)
+
 WORDED_HOURS = {
     "une": 1, "un": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5,
     "six": 6, "sept": 7, "huit": 8, "neuf": 9, "dix": 10, "onze": 11,
@@ -603,8 +617,13 @@ def merge_incident_statement(extracted: dict[str, Any], statement: str) -> None:
         delay_minutes = hours * 60 + minutes
         if not 0 < delay_minutes < 24 * 60:
             continue
-        context_before = normalized[max(0, match.start() - 20) : match.start()]
-        if CLOCK_CONTEXT.search(context_before):
+        # Une préposition d'heure ne disqualifie la durée que si aucun marqueur
+        # de retard ne la précède dans la même proposition : « arrivé à 23 h 50 »
+        # est une horloge, « retard estimé à 3 h » est bien une durée.
+        clause = _clause_before(normalized, match.start())
+        if CLOCK_CONTEXT.search(clause[-20:]) and not any(
+            marker in clause for marker in DELAY_MARKERS
+        ):
             continue
         neighbourhood = (
             normalized[max(0, match.start() - 45) : match.start()]
@@ -655,18 +674,24 @@ def merge_incident_statement(extracted: dict[str, Any], statement: str) -> None:
             extracted["delay_minutes"] = delay_minutes
             extracted["arrival_delay_minutes"] = delay_minutes
 
-    known_causes = {
-        "problème technique": "problème technique déclaré par le voyageur",
-        "probleme technique": "problème technique déclaré par le voyageur",
-        "météo": "météo déclarée par le voyageur",
-        "meteo": "météo déclarée par le voyageur",
-        "grève": "grève déclarée par le voyageur",
-        "greve": "grève déclarée par le voyageur",
-    }
-    for marker, cause in known_causes.items():
-        if marker in normalized:
-            extracted["disruption_cause"] = cause
-            break
+    # On conserve le libellé réel plutôt qu'une étiquette générique. « Grève des
+    # contrôleurs aériens » et « grève du personnel de la compagnie » n'ont pas
+    # le même effet juridique, et `classify_cause` a besoin de ce détail : les
+    # aplatir en « grève déclarée par le voyageur » rendait la qualification de
+    # cause inopérante dès que la cause venait de la déclaration.
+    for marker in CAUSE_MARKERS:
+        found = re.search(re.escape(marker), statement, re.IGNORECASE)
+        if not found:
+            continue
+        fragment = statement[found.start() : found.start() + 90]
+        for terminator in (".", ";", "\n"):
+            cut = fragment.find(terminator)
+            if cut > 0:
+                fragment = fragment[:cut]
+        extracted["disruption_cause"] = (
+            f"{fragment.strip()} (déclaré par le voyageur)"
+        )
+        break
 
     abandoned_trip_markers = (
         "je n'ai pas pris le vol",

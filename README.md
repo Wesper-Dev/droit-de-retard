@@ -217,6 +217,15 @@ Le compte exact et ce que la suite **ne** couvre pas sont dans
 [`docs/EVALUATION.md`](docs/EVALUATION.md) ; un test échoue si ce document
 cesse d'être à jour.
 
+S'y ajoute un **corpus de déclarations** : une trentaine de formulations, dont
+des formulations hostiles, passées dans la couche qui transforme une phrase de
+voyageur en faits chiffrés. Il tourne sans réseau ni Ollama et documente
+explicitement ce qui n'est pas encore compris.
+
+```bash
+python3 eval/corpus.py
+```
+
 ## Confidentialité et résilience
 
 Le document, le nom et la référence de réservation sont traités par Ollama sur

@@ -1,0 +1,232 @@
+{
+  "schema_version": "1.0",
+  "target": "agent.merge_incident_statement",
+  "purpose": "Mesurer ce que la couche déterministe comprend d'une déclaration en langage libre. Aucun appel au modèle : ce corpus tourne en CI comme un test ordinaire.",
+  "conventions": {
+    "expect": "Champs attendus après analyse. Une valeur null signifie « doit rester non renseigné », pas « peu importe ».",
+    "status": "supported = doit passer. known_gap = échec assumé et documenté ; si un tel cas se met à passer, la suite échoue pour forcer sa promotion en supported."
+  },
+  "cases": [
+    {
+      "id": "nominal-hours-minutes",
+      "statement": "Le vol est arrivé avec 3 h 25 de retard après un problème technique.",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 205},
+      "why": "Formulation de référence du scénario de démonstration."
+    },
+    {
+      "id": "compact-hours",
+      "statement": "retard de 3h",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 180},
+      "why": "Écriture compacte sans espace ni minutes."
+    },
+    {
+      "id": "explicit-minutes",
+      "statement": "vol retardé de 200 minutes",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 200},
+      "why": "Durée donnée directement en minutes."
+    },
+    {
+      "id": "spelled-half-hour",
+      "statement": "trois heures et demie de retard",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 210},
+      "why": "Durée en toutes lettres avec fraction."
+    },
+    {
+      "id": "spelled-quarter",
+      "statement": "quatre heures et quart de retard",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 255},
+      "why": "Fraction de quart d'heure."
+    },
+    {
+      "id": "spelled-plain",
+      "statement": "deux heures de retard",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 120},
+      "why": "Durée en toutes lettres sans fraction."
+    },
+    {
+      "id": "landed-with-delay",
+      "statement": "on a atterri avec 3h10 de retard",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 190},
+      "why": "Verbe d'atterrissage plutôt que d'arrivée."
+    },
+    {
+      "id": "delay-inside-a-longer-sentence",
+      "statement": "mon vol Paris-Lisbonne du 12 juin a eu 3h25 de retard",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 205},
+      "why": "La durée est noyée dans une phrase porteuse d'autres nombres."
+    },
+    {
+      "id": "negated-cancellation",
+      "statement": "mon vol n'a pas été annulé, juste 3h30 de retard",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 210},
+      "why": "La négation ne porte que sur sa propre proposition : elle nie l'annulation, pas le retard."
+    },
+    {
+      "id": "negated-denied-boarding",
+      "statement": "on ne m'a pas refusé l'embarquement, le vol avait 4 h de retard",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 240},
+      "why": "Même règle de portée sur un autre type d'incident."
+    },
+    {
+      "id": "estimated-delay-with-preposition",
+      "statement": "retard estimé à 3 h environ",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 180},
+      "why": "Régression trouvée le 27/07/2026 : le rejet des heures d'horloge écartait aussi une durée légitime précédée de « à », alors qu'un marqueur de retard la précède dans la même proposition."
+    },
+    {
+      "id": "clock-times-are-not-durations",
+      "statement": "arrivée 23h50 au lieu de 20h25",
+      "status": "supported",
+      "expect": {"disruption_type": null, "arrival_delay_minutes": null, "departure_delay_minutes": null},
+      "why": "Deux heures d'horloge sans marqueur de retard : 23h50 ne vaut pas 1430 minutes."
+    },
+    {
+      "id": "clock-time-after-a-real-delay",
+      "statement": "3h30 de retard, je suis arrivé à 23h50",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 210},
+      "why": "La durée réelle est retenue et l'heure d'arrivée ignorée."
+    },
+    {
+      "id": "duration-without-delay-marker",
+      "statement": "le vol dure 2 h 30",
+      "status": "supported",
+      "expect": {"disruption_type": null, "arrival_delay_minutes": null},
+      "why": "Une durée de vol n'est pas un retard."
+    },
+    {
+      "id": "departure-delay-only",
+      "statement": "Le vol avait 5 h 10 de retard au départ.",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "departure_delay_minutes": 310, "arrival_delay_minutes": null},
+      "why": "Un retard au départ ne doit jamais être compté comme retard à l'arrivée."
+    },
+    {
+      "id": "both-delays",
+      "statement": "Le vol avait 5 h de retard au départ et 2 h 30 à l'arrivée.",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "departure_delay_minutes": 300, "arrival_delay_minutes": 150},
+      "why": "Deux durées attribuées à deux moments distincts."
+    },
+    {
+      "id": "both-delays-without-apostrophe",
+      "statement": "Le vol avait 5 h de retard au départ et 2 h 30 à l arrivée.",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "departure_delay_minutes": 300, "arrival_delay_minutes": 150},
+      "why": "L'apostrophe manque souvent en saisie rapide ou en dictée."
+    },
+    {
+      "id": "cancellation",
+      "statement": "Le vol a été annulé.",
+      "status": "supported",
+      "expect": {"disruption_type": "cancellation"},
+      "why": "Type d'incident simple."
+    },
+    {
+      "id": "denied-boarding",
+      "statement": "On m'a refusé l'embarquement.",
+      "status": "supported",
+      "expect": {"disruption_type": "denied_boarding"},
+      "why": "Type d'incident simple."
+    },
+    {
+      "id": "missed-connection",
+      "statement": "J'ai raté ma correspondance.",
+      "status": "supported",
+      "expect": {"disruption_type": "missed_connection"},
+      "why": "Type d'incident simple."
+    },
+    {
+      "id": "abandoned-trip",
+      "statement": "Le vol avait 5 h de retard au départ, j'ai renoncé au voyage.",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "departure_delay_minutes": 300, "trip_completed": false},
+      "why": "Le renoncement conditionne le remboursement du billet."
+    },
+    {
+      "id": "completed-trip",
+      "statement": "Le vol avait 5 h de retard au départ, j'ai pris le vol quand même.",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "trip_completed": true},
+      "why": "Choix inverse, également explicite."
+    },
+    {
+      "id": "no-explicit-choice-clears-inference",
+      "statement": "Le vol est arrivé avec 3 h 25 de retard.",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "trip_completed": null},
+      "why": "Sans déclaration explicite, le choix du voyageur ne doit pas être deviné."
+    },
+    {
+      "id": "cause-technical",
+      "statement": "3 h de retard à cause d'un problème technique",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 180},
+      "expect_cause_risk": "low",
+      "why": "CJUE Wallentin-Hermann C-549/07 : la panne technique n'exonère pas."
+    },
+    {
+      "id": "cause-weather",
+      "statement": "3 h de retard à cause de la météo",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 180},
+      "expect_cause_risk": "high",
+      "why": "Circonstance potentiellement extraordinaire, à prouver par le transporteur."
+    },
+    {
+      "id": "cause-atc-strike",
+      "statement": "4 h de retard, grève des contrôleurs aériens",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 240},
+      "expect_cause_risk": "high",
+      "why": "Grève externe au transporteur."
+    },
+    {
+      "id": "cause-own-staff-strike",
+      "statement": "4 h de retard, grève du personnel de la compagnie",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 240},
+      "expect_cause_risk": "low",
+      "why": "CJUE Krüsemann C-195/17 : la grève interne n'exonère pas."
+    },
+    {
+      "id": "absurd-duration-is-ignored",
+      "statement": "le vol a eu 40 heures de retard",
+      "status": "supported",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": null},
+      "why": "Au-delà de 24 h, la durée est écartée plutôt que propagée dans un calcul."
+    },
+    {
+      "id": "waiting-time-phrasing",
+      "statement": "j'ai attendu plus de 4 heures",
+      "status": "known_gap",
+      "expect": {"disruption_type": "delay", "arrival_delay_minutes": 240},
+      "why": "Trou assumé : « attendre » est ambigu entre le temps passé en aéroport et le retard à l'arrivée. Traiter les deux comme équivalents sur-réclamerait."
+    },
+    {
+      "id": "later-than-planned-phrasing",
+      "statement": "annulation puis rebooking, arrivé 5h plus tard",
+      "status": "known_gap",
+      "expect": {"disruption_type": "cancellation", "arrival_delay_minutes": 300},
+      "why": "Trou assumé : « plus tard » sans marqueur de retard. Le type est correctement détecté, la durée non."
+    },
+    {
+      "id": "two-clock-times-subtraction",
+      "statement": "le vol devait partir à 14h, il est parti à 19h30",
+      "status": "known_gap",
+      "expect": {"disruption_type": "delay", "departure_delay_minutes": 330},
+      "why": "Trou assumé : déduire une durée de deux heures d'horloge dans une phrase. Le pipeline sait le faire sur les champs scheduled_arrival / actual_arrival, pas sur du texte libre."
+    }
+  ]
+}

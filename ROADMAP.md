@@ -18,7 +18,7 @@ objectifs : **une vitrine GitHub crédible**, et l'évaluation honnête d'une
 
 État réel du code : extraction multimodale Gemma 4 en JSON strict, function
 calling natif Ollama à trois outils, moteur EU261 déterministe (61 aéroports),
-corpus procédural local de 3 compagnies, dictée vocale locale, 103 tests.
+corpus procédural local de 3 compagnies, dictée vocale locale, 106 tests.
 Dépôt personnel : `github.com/Wesper-Dev/droit-de-retard`.
 
 ---
@@ -423,7 +423,7 @@ réelle, zéro affirmation contredite par son propre code.*
 
 | Semaine | Contenu |
 | --- | --- |
-| 5-6 | `eval/cases.yaml` — 25 à 30 déclarations adversariales — et `eval/run.py` avec trois taux : correct / manquant / **halluciné**. Puis §4.2 piloté par ces cas |
+| 5-6 | ~~`eval/cases.yaml`~~ **fait** : `eval/incident_cases.json` (31 cas, JSON et non YAML pour préserver le zéro-dépendance) et `eval/corpus.py`, appliqués par la CI. Trois bugs trouvés à la première exécution, dont l'aplatissement de la cause qui neutralisait la qualification §3.3 |
 | 7 | §3.2 validation du montant de la lettre. §4.6 + §4.7 allow-list et `carriers.json` |
 | 8 | §4.4 contrat d'erreur, §4.8 `Host` et `Content-Type`, §4.9 fiche périmée. Pied de lettre inséré côté serveur, avec le test qui échoue s'il manque |
 

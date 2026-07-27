@@ -36,6 +36,7 @@ from eu261 import (
     qualify_delay,
     resolve_airport,
 )
+from eval import corpus
 from tools import (
     RESEARCH_TOOL_DEFINITIONS,
     _api_key,
@@ -1417,6 +1418,52 @@ class FlightDatePlausibilityTests(unittest.TestCase):
     def test_unparseable_date_is_not_a_warning(self):
         for value in ("pas une date", None, ""):
             self.assertIsNone(_implausible_date({"departure_date": value}, self.TODAY))
+
+
+class IncidentCorpusTests(unittest.TestCase):
+    """Le corpus de déclarations, appliqué par la CI comme un test ordinaire.
+
+    Il mesure ce que la couche déterministe comprend d'une phrase écrite par un
+    voyageur — la seule couche entre le langage libre et les faits chiffrés, et
+    celle qui se trompait en silence avant d'être mesurée.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.results = corpus.run_all()
+
+    def test_every_supported_case_passes(self):
+        failures = [
+            f"{r['id']} — « {r['statement']} » : {'; '.join(r['mismatches'])}"
+            for r in self.results
+            if r["status"] == "supported" and not r["passed"]
+        ]
+
+        self.assertEqual(failures, [])
+
+    def test_known_gaps_still_fail(self):
+        """Un trou qui se met à passer doit être promu, pas oublié.
+
+        Sans cette assertion, le corpus documenterait éternellement des limites
+        qui n'existent plus.
+        """
+        resolved = [
+            r["id"]
+            for r in self.results
+            if r["status"] == "known_gap" and r["passed"]
+        ]
+
+        self.assertEqual(
+            resolved,
+            [],
+            "ces cas passent désormais : passe-les en status 'supported' "
+            "dans eval/incident_cases.json",
+        )
+
+    def test_corpus_is_substantial_and_documented(self):
+        self.assertGreaterEqual(len(self.results), 25)
+        undocumented = [r["id"] for r in self.results if not r["why"]]
+        self.assertEqual(undocumented, [], "chaque cas doit dire pourquoi il existe")
 
 
 class DocumentedFiguresTests(unittest.TestCase):
