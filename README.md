@@ -4,6 +4,8 @@
 
 Assistant local de préparation de réclamations aériennes EU261.
 
+![Interface de Droit de Retard : le dossier analysé, l'indemnisation qualifiée et la trace de l'agent état par état](docs/images/interface.png)
+
 À partir d'un billet PDF ou image, le prototype extrait les faits avec Gemma 4,
 demande les informations manquantes, recherche des sources officielles et
 calcule une indemnisation potentielle avec des règles Python déterministes. Il
@@ -69,7 +71,13 @@ seuils, de la distance, du montant et des branches de sécurité.
 | `docs/hackathon/` | Archive figée de juillet 2026, non maintenue |
 
 L'état des travaux et la dette restante sont suivis dans
-[`ROADMAP.md`](ROADMAP.md).
+[`ROADMAP.md`](ROADMAP.md). Les chiffres mesurés — nombre de tests, latence,
+couverture — vivent dans [`docs/EVALUATION.md`](docs/EVALUATION.md), qui est
+leur point de vérité unique.
+
+**Voir la sortie sans rien installer :** [`examples/`](examples/) contient la
+réponse complète d'une exécution réelle, sa trace d'agent et le résultat du
+corpus local, versionnés tels quels.
 
 ## Prérequis
 
@@ -163,7 +171,7 @@ garantie de latence ou d'éligibilité.
 python3 -m unittest discover -v
 ```
 
-Les 101 tests couvrent le routage, la normalisation des durées, les seuils, les
+Les tests couvrent le routage, la normalisation des durées, les seuils, les
 tranches de distance, le remboursement séparé et la confidentialité des
 recherches. Ils vérifient également les schémas d'outils, le parsing de
 `tool_calls`, le retour `role=tool`, le rejet des fonctions ou arguments hors
@@ -172,6 +180,10 @@ qu'un retard au départ d'au moins 5 heures sans choix explicite du passager
 déclenche une question, tandis qu'un voyage abandonné peut ouvrir un résultat
 conditionnel ou `likely`. Les appels Ollama doivent rester séquentiels pour
 obtenir des mesures de latence comparables.
+
+Le compte exact et ce que la suite **ne** couvre pas sont dans
+[`docs/EVALUATION.md`](docs/EVALUATION.md) ; un test échoue si ce document
+cesse d'être à jour.
 
 ## Confidentialité et résilience
 

@@ -1,0 +1,43 @@
+{
+  "status": "found",
+  "source": "local_corpus",
+  "company": "Air France",
+  "incident_specific": true,
+  "freshness": "fresh",
+  "verified_on": "2026-07-25",
+  "legal_scope": "Procédure de compagnie uniquement. Cette fiche ne décide pas de l'éligibilité EU261 et ne garantit aucun remboursement ou indemnisation.",
+  "procedures": [
+    {
+      "topic": "refund_or_compensation_request",
+      "channel_label": "Remboursement, avoir et indemnisation",
+      "channel_url": "https://wwws.airfrance.fr/contact/topic/refund-compensation",
+      "steps": [
+        "Ouvrir le parcours officiel Air France.",
+        "Sélectionner le motif correspondant à la demande.",
+        "Suivre les étapes affichées par le formulaire dynamique.",
+        "Adresser la demande au transporteur qui a opéré ou devait opérer le vol."
+      ],
+      "required_information": [
+        "motif de la demande"
+      ],
+      "required_documents": [],
+      "limits": [
+        "La page publique ne donne pas une liste stable et exhaustive des pièces : le formulaire les demande selon le motif choisi.",
+        "Le canal est un routeur dynamique et peut nécessiter une nouvelle vérification avant automatisation."
+      ],
+      "sources": [
+        {
+          "title": "Remboursement, avoir et indemnisation",
+          "link": "https://wwws.airfrance.fr/information/legal/remboursement",
+          "verified_on": "2026-07-25"
+        },
+        {
+          "title": "Droits des passagers — demandes et contact",
+          "link": "https://wwws.airfrance.fr/information/legal/assistance-et-indemnisation",
+          "verified_on": "2026-07-25"
+        }
+      ]
+    }
+  ],
+  "message": null
+}

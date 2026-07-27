@@ -1,0 +1,216 @@
+{
+  "model": "gemma4:12b",
+  "document": "billet_avion_fictif.png",
+  "extraction": {
+    "document_type": "boarding_pass",
+    "passenger_name": "MARTIN LEA",
+    "airline": "AURORA AIRLINES",
+    "flight_number": "AU 3127",
+    "origin": "PARIS CDG",
+    "destination": "LIONNONE LIS",
+    "departure_date": "2026-09-14",
+    "scheduled_departure": "09:25",
+    "scheduled_arrival": null,
+    "actual_arrival": null,
+    "boarding_time": "08:55",
+    "booking_reference": "FQ7T2K",
+    "seat": "14C",
+    "gate": "B7",
+    "disruption_type": "delay",
+    "delay_minutes": 205,
+    "arrival_delay_minutes": 205,
+    "departure_delay_minutes": null,
+    "trip_completed": null,
+    "disruption_cause": "problème technique déclaré par le voyageur",
+    "evidence": [
+      "Date: 14 SEPT. 2026",
+      "Heure: 09:25",
+      "Vol: AU 3127",
+      "Déclaration du voyageur (non vérifiée) : Le vol est arrivé avec 3 h 25 de retard après un problème technique."
+    ],
+    "uncertain_fields": [
+      "scheduled_arrival"
+    ]
+  },
+  "decision": {
+    "status": "ready_for_claim",
+    "message": "L'indemnisation a été qualifiée et le dossier de réclamation est préparé.",
+    "questions": [
+      "Combien de retard le vol avait-il au départ ?"
+    ],
+    "next_tool": null
+  },
+  "research": {
+    "rights": {
+      "status": "online",
+      "reason": null,
+      "reference_source_reachable": true,
+      "sources": [
+        {
+          "title": "Droits des passagers aériens - Your Europe",
+          "link": "https://europa.eu/youreurope/citizens/travel/passenger-rights/air/index_fr.htm",
+          "snippet": "Ces droits sont proportionnels à la durée du retard et à la distance du vol: à partir de deux heures de retard pour les vols de 1 500 km ou moins;; à partir ..."
+        },
+        {
+          "title": "FAQ|Droits des passagers aériens - Your Europe",
+          "link": "https://europa.eu/youreurope/citizens/travel/passenger-rights/air/faq/index_fr.htm",
+          "snippet": "Si votre vol a deux heures de retard ou plus au départ, la compagnie aérienne doit vous offrir une assistance (des repas et des rafraîchissements et, si ..."
+        }
+      ]
+    },
+    "claim_channel": {
+      "status": "demo_carrier",
+      "channel": null,
+      "message": "Aurora Airlines est fictive : aucun formulaire de réclamation réel ne sera inventé."
+    },
+    "airline_policy": {
+      "status": "not_found",
+      "source": "local_corpus",
+      "company": null,
+      "procedures": [],
+      "message": "Aucune fiche locale pour cette compagnie : le corpus couvre seulement quelques transporteurs et n'invente rien."
+    }
+  },
+  "qualification": {
+    "status": "likely",
+    "right_type": "eu261_compensation",
+    "reason": "Le seuil de retard et la distance sont satisfaits, sous réserve de la cause, des preuves et des exceptions applicables.",
+    "distance_km": 1470.2,
+    "compensation_eur": 250,
+    "cause_risk": "low",
+    "cause_note": "La cause déclarée est en principe imputable au transporteur et n'exonère pas de l'indemnisation.",
+    "reference_source_reachable": true,
+    "rule": "Retard à l'arrivée >= 3 h ; tranche de distance donnant 250 €.",
+    "ruleset": {
+      "name": "EU261 simplified demo rules",
+      "verified_on": "2026-07-25",
+      "source": "https://europa.eu/youreurope/citizens/travel/passenger-rights/air/index_fr.htm"
+    }
+  },
+  "reimbursement": {
+    "status": "needs_information",
+    "right_type": "ticket_reimbursement",
+    "reason": "Le retard à l'arrivée ne suffit pas : indique le retard au départ pour vérifier le seuil de remboursement de 5 heures.",
+    "question": "Combien de retard le vol avait-il au départ ?",
+    "amount_eur": null,
+    "ruleset": {
+      "name": "EU261 simplified demo rules",
+      "verified_on": "2026-07-25",
+      "source": "https://europa.eu/youreurope/citizens/travel/passenger-rights/air/index_fr.htm"
+    }
+  },
+  "refusal": null,
+  "uncovered_right": null,
+  "claim": {
+    "eligibility": "likely",
+    "summary": "Le vol AU 3127 a subi un retard de 205 minutes (3h25) à l'arrivée à Lisbonne. Ce retard dépasse le seuil de 3 heures pour une distance supérieure à 1 500 km, ce qui ouvre droit à une indemnisation forfaitaire selon le règlement EU261.",
+    "estimated_compensation_eur": 250,
+    "reasoning": [
+      "Le retard constaté est de 205 minutes [INDEMNISATION_EU261].",
+      "La distance du vol (1470.2 km) et la durée du retard permettent d'envisager une indemnisation forfaitaire [INDEMNISATION_EU261].",
+      "Bien qu'un problème technique soit mentionné, cette cause déclarée n'exonère en principe pas le transporteur de son obligation d'indemnisation [INDEMNISATION_EU261]."
+    ],
+    "letter_subject": "Réclamation pour retard de vol - Vol AU 3127 du 14/09/2026",
+    "letter_body": "Madame, Monsieur,\n\nJe vous contacte concernant mon voyage sur le vol AU 3127 en provenance de Paris (CDG) à destination de Lisbonne (LIS) le 14 septembre 2026 (Référence de réservation : FQ7T2K).\n\nMon vol est arrivé avec un retard de 205 minutes. En raison de ce retard supérieur à trois heures sur un trajet de cette distance, je sollicite une indemnisation forfaitaire conformément au règlement européen applicable [INDEMNISATION_EU261].\n\nBien que le retard ait été causé par un problème technique, je vous rappelle que la cause déclarée n'exonère en principe pas le transporteur de son obligation d'indemnisation [INDEMNISATION_EU261].\n\nJe vous remercie de bien vouloir me confirmer la prise en compte de ma demande et m'informer des modalités de versement de l'indemnisation prévue.\n\nDans l'attente de votre retour,\n\nCordialement,\n\nMARTIN LEA",
+    "checklist": [
+      "Adresser la demande au transporteur."
+    ],
+    "warnings": [],
+    "source_indices": [
+      10,
+      11,
+      23,
+      24,
+      25,
+      26
+    ]
+  },
+  "trace": [
+    {
+      "step": "extract_flight",
+      "state": "EXTRACTION",
+      "tool": "ollama.chat",
+      "duration_seconds": 10.69,
+      "outcome": "ok"
+    },
+    {
+      "step": "check_flight_date",
+      "state": "VRAISEMBLANCE_DATE",
+      "tool": "deterministic_rules",
+      "duration_seconds": 0,
+      "outcome": "implausible",
+      "details": "La date de vol lue (2026-09-14) est dans le futur : un incident ne peut pas encore avoir eu lieu. Vérifie la date avant d'envoyer."
+    },
+    {
+      "step": "route_case",
+      "state": "VALIDATION_CHAMPS",
+      "tool": "deterministic_router",
+      "duration_seconds": 0,
+      "outcome": "ready_for_research"
+    },
+    {
+      "step": "select_research_tools",
+      "state": "SELECTION_OUTILS_GEMMA",
+      "tool": "ollama.chat.tools",
+      "duration_seconds": 9.41,
+      "outcome": "gemma_tool_calls",
+      "details": null,
+      "requested_tool_calls": 3,
+      "rejected_tool_calls": 0,
+      "tool_result_round_trips": 2
+    },
+    {
+      "step": "verify_rule",
+      "state": "RECHERCHE_REGLES",
+      "tool": "verify_air_passenger_rule",
+      "selected_by": "gemma_tool_call",
+      "outcome": "online",
+      "details": null
+    },
+    {
+      "step": "find_claim_channel",
+      "state": "RECHERCHE_CANAL",
+      "tool": "find_claim_channel",
+      "selected_by": "gemma_tool_call",
+      "outcome": "demo_carrier",
+      "details": "Aurora Airlines est fictive : aucun formulaire de réclamation réel ne sera inventé."
+    },
+    {
+      "step": "retrieve_airline_policy",
+      "state": "CORPUS_LOCAL",
+      "tool": "retrieve_airline_policy",
+      "selected_by": "gemma_tool_call",
+      "outcome": "not_found",
+      "details": "Aucune fiche locale pour cette compagnie : le corpus couvre seulement quelques transporteurs et n'invente rien."
+    },
+    {
+      "step": "qualify_eu261",
+      "state": "QUALIFICATION_EU261",
+      "tool": "deterministic_rules",
+      "duration_seconds": 0,
+      "outcome": "likely"
+    },
+    {
+      "step": "assess_ticket_reimbursement",
+      "state": "REMBOURSEMENT_BILLET",
+      "tool": "deterministic_rules",
+      "duration_seconds": 0,
+      "outcome": "needs_information"
+    },
+    {
+      "step": "validate_claim",
+      "state": "VALIDATION_LETTRE",
+      "tool": "deterministic_rules",
+      "duration_seconds": 0,
+      "outcome": "ok",
+      "details": null
+    },
+    {
+      "step": "draft_claim",
+      "state": "REDACTION",
+      "tool": "ollama.chat",
+      "duration_seconds": 22.57,
+      "outcome": "ok"
+    }
+  ]
+}

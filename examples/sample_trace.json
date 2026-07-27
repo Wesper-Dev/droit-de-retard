@@ -1,0 +1,88 @@
+[
+  {
+    "step": "extract_flight",
+    "state": "EXTRACTION",
+    "tool": "ollama.chat",
+    "duration_seconds": 10.69,
+    "outcome": "ok"
+  },
+  {
+    "step": "check_flight_date",
+    "state": "VRAISEMBLANCE_DATE",
+    "tool": "deterministic_rules",
+    "duration_seconds": 0,
+    "outcome": "implausible",
+    "details": "La date de vol lue (2026-09-14) est dans le futur : un incident ne peut pas encore avoir eu lieu. Vérifie la date avant d'envoyer."
+  },
+  {
+    "step": "route_case",
+    "state": "VALIDATION_CHAMPS",
+    "tool": "deterministic_router",
+    "duration_seconds": 0,
+    "outcome": "ready_for_research"
+  },
+  {
+    "step": "select_research_tools",
+    "state": "SELECTION_OUTILS_GEMMA",
+    "tool": "ollama.chat.tools",
+    "duration_seconds": 9.41,
+    "outcome": "gemma_tool_calls",
+    "details": null,
+    "requested_tool_calls": 3,
+    "rejected_tool_calls": 0,
+    "tool_result_round_trips": 2
+  },
+  {
+    "step": "verify_rule",
+    "state": "RECHERCHE_REGLES",
+    "tool": "verify_air_passenger_rule",
+    "selected_by": "gemma_tool_call",
+    "outcome": "online",
+    "details": null
+  },
+  {
+    "step": "find_claim_channel",
+    "state": "RECHERCHE_CANAL",
+    "tool": "find_claim_channel",
+    "selected_by": "gemma_tool_call",
+    "outcome": "demo_carrier",
+    "details": "Aurora Airlines est fictive : aucun formulaire de réclamation réel ne sera inventé."
+  },
+  {
+    "step": "retrieve_airline_policy",
+    "state": "CORPUS_LOCAL",
+    "tool": "retrieve_airline_policy",
+    "selected_by": "gemma_tool_call",
+    "outcome": "not_found",
+    "details": "Aucune fiche locale pour cette compagnie : le corpus couvre seulement quelques transporteurs et n'invente rien."
+  },
+  {
+    "step": "qualify_eu261",
+    "state": "QUALIFICATION_EU261",
+    "tool": "deterministic_rules",
+    "duration_seconds": 0,
+    "outcome": "likely"
+  },
+  {
+    "step": "assess_ticket_reimbursement",
+    "state": "REMBOURSEMENT_BILLET",
+    "tool": "deterministic_rules",
+    "duration_seconds": 0,
+    "outcome": "needs_information"
+  },
+  {
+    "step": "validate_claim",
+    "state": "VALIDATION_LETTRE",
+    "tool": "deterministic_rules",
+    "duration_seconds": 0,
+    "outcome": "ok",
+    "details": null
+  },
+  {
+    "step": "draft_claim",
+    "state": "REDACTION",
+    "tool": "ollama.chat",
+    "duration_seconds": 22.57,
+    "outcome": "ok"
+  }
+]

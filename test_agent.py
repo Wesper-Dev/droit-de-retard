@@ -1,8 +1,11 @@
 """Tests déterministes du routage de dossiers aériens."""
 from __future__ import annotations
 
+import ast
 import datetime
 import io
+import pathlib
+import re
 import unittest
 from unittest.mock import patch
 import wave
@@ -1414,6 +1417,43 @@ class FlightDatePlausibilityTests(unittest.TestCase):
     def test_unparseable_date_is_not_a_warning(self):
         for value in ("pas une date", None, ""):
             self.assertIsNone(_implausible_date({"departure_date": value}, self.TODAY))
+
+
+class DocumentedFiguresTests(unittest.TestCase):
+    """Les chiffres publiés doivent rester vrais sans intervention manuelle."""
+
+    ROOT = pathlib.Path(__file__).resolve().parent
+
+    def test_documented_test_count_is_accurate(self):
+        """Quatre documents ont déjà annoncé quatre comptes différents.
+
+        Compter les méthodes par analyse syntaxique plutôt qu'en relançant la
+        découverte évite toute récursion : ce test fait partie du total qu'il
+        vérifie.
+        """
+        source = (self.ROOT / "test_agent.py").read_text(encoding="utf-8")
+        actual = sum(
+            1
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+        )
+        documented = (self.ROOT / "docs" / "EVALUATION.md").read_text(encoding="utf-8")
+        match = re.search(r"compte \*\*(\d+)\*\* tests déterministes", documented)
+
+        self.assertIsNotNone(match, "docs/EVALUATION.md n'annonce plus de compte")
+        self.assertEqual(
+            int(match.group(1)),
+            actual,
+            "docs/EVALUATION.md doit être mis à jour après ajout ou retrait d'un test",
+        )
+
+    def test_documented_port_matches_the_server_default(self):
+        documented = (self.ROOT / "docs" / "EVALUATION.md").read_text(encoding="utf-8")
+        source = (self.ROOT / "app.py").read_text(encoding="utf-8")
+        default_port = re.search(r'"--port", default=(\d+)', source)
+
+        self.assertIsNotNone(default_port)
+        self.assertIn(f"**{default_port.group(1)}**", documented)
 
 
 class ClaimSchemaTests(unittest.TestCase):
