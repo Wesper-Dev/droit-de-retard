@@ -79,6 +79,38 @@ leur point de vérité unique.
 réponse complète d'une exécution réelle, sa trace d'agent et le résultat du
 corpus local, versionnés tels quels.
 
+## Où regarder
+
+Si tu n'ouvres que cinq fichiers, ouvre ceux-là. Les liens sont figés sur un
+commit : les numéros de ligne resteront valides.
+
+- **[`_validate_tool_call`](https://github.com/Wesper-Dev/droit-de-retard/blob/6a0aea5b2fae2911289761d60577b9b5db644b27/agent.py#L785-L810)** — quand Gemma demande
+  un outil, le code ne résout pas le nom qu'il donne. Il **recalcule** en Python
+  les arguments attendus et rejette tout ce qui diffère, à l'octet près. Le
+  modèle choisit, il n'ordonne pas.
+- **[`_execute_research_tool`](https://github.com/Wesper-Dev/droit-de-retard/blob/6a0aea5b2fae2911289761d60577b9b5db644b27/agent.py#L813-L823)** — une chaîne de `if`
+  littérale, sans résolution dynamique. Trois lignes ennuyeuses là où la norme
+  de l'écosystème reste `globals()[name](**args)`, c'est-à-dire l'exécution
+  d'une fonction nommée par le modèle.
+- **[`_validate_claim`](https://github.com/Wesper-Dev/droit-de-retard/blob/6a0aea5b2fae2911289761d60577b9b5db644b27/agent.py#L1069-L1123)** — le pendant, côté
+  sortie : la lettre rédigée par le modèle est recoupée avec le moteur. Un
+  montant qui diverge est remplacé, une URL absente des sources est signalée.
+- **[`qualify_delay`](https://github.com/Wesper-Dev/droit-de-retard/blob/6a0aea5b2fae2911289761d60577b9b5db644b27/eu261.py#L325-L423)** et
+  **[`resolve_airport`](https://github.com/Wesper-Dev/droit-de-retard/blob/6a0aea5b2fae2911289761d60577b9b5db644b27/eu261.py#L132-L155)** — la décision juridique et
+  la résolution d'aéroport, en Python déterministe et testable hors ligne. Le
+  modèle ne calcule jamais un montant. `resolve_airport` pose une question
+  plutôt que de choisir quand un libellé est ambigu.
+- **[`classify_cause`](https://github.com/Wesper-Dev/droit-de-retard/blob/6a0aea5b2fae2911289761d60577b9b5db644b27/eu261.py#L314-L322)** — la jurisprudence dans le
+  code : panne technique (CJUE Wallentin-Hermann C-549/07) et grève du personnel
+  propre (Krüsemann C-195/17) n'exonèrent pas le transporteur, une grève du
+  contrôle aérien le peut. Une cause à risque ne vaut jamais refus : la charge
+  de la preuve pèse sur la compagnie.
+
+Les deux tests qui verrouillent cette frontière :
+**[un modèle qui tente de lire `.env`](https://github.com/Wesper-Dev/droit-de-retard/blob/6a0aea5b2fae2911289761d60577b9b5db644b27/test_agent.py#L699-L722)** et
+**[un argument personnel glissé dans un appel d'outil](https://github.com/Wesper-Dev/droit-de-retard/blob/6a0aea5b2fae2911289761d60577b9b5db644b27/test_agent.py#L727-L752)**,
+tous deux rejetés.
+
 ## Prérequis
 
 - Python 3.10 ou supérieur ;

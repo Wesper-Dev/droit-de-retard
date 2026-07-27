@@ -18,7 +18,7 @@ objectifs : **une vitrine GitHub crédible**, et l'évaluation honnête d'une
 
 État réel du code : extraction multimodale Gemma 4 en JSON strict, function
 calling natif Ollama à trois outils, moteur EU261 déterministe (61 aéroports),
-corpus procédural local de 3 compagnies, dictée vocale locale, 101 tests.
+corpus procédural local de 3 compagnies, dictée vocale locale, 103 tests.
 Dépôt personnel : `github.com/Wesper-Dev/droit-de-retard`.
 
 ---
@@ -313,21 +313,20 @@ passe sans un mot.
 - [x] **`.github/workflows/tests.yml`** (badge à ajouter au README) — la suite tourne en 0,04 s,
       sans réseau ni Ollama ni dépendance. Matrice 3.10 → 3.13, ce qui tranche
       au passage l'affirmation jamais vérifiée du README. Un seul badge.
-- [~] **Réconcilier les chiffres** — traité par le rangement : les documents
-      qui annonçaient 32 tests et le port 7860 sont désormais dans
-      `docs/hackathon/`, explicitement gelés, et le port du writeup a été
-      corrigé. Les documents vivants — `README.md`, `ROADMAP.md` — portent les
-      chiffres réels. **Reste à faire :** `docs/EVALUATION.md` comme point de
-      vérité unique et un test qui verrouille le compte, pour que la dérive
-      redevienne impossible plutôt que corrigée à la main.
-- [ ] **Section « Where to look »**, cinq lignes, permaliens figés, pointant
-      `_validate_tool_call`, `_execute_research_tool`, `eu261.py` et les deux
-      tests qui simulent un modèle tentant de lire `.env`. Dans un écosystème où
-      la norme reste `globals()[name](**args)`, c'est l'artefact le plus citable
-      du projet. Trente minutes.
-- [ ] **Une capture PNG** — zéro image dans 18 fichiers `.md`, pour un produit
-      dont l'élément central est une trace visuelle. Plus le lien vidéo, absent
-      du README. Plus `examples/sample_output.json` et `examples/sample_trace.json`.
+- [x] **Réconcilier les chiffres** — `docs/EVALUATION.md` est le point de
+      vérité unique, et `test_documented_test_count_is_accurate` le verrouille :
+      ajouter un test sans mettre le document à jour fait échouer la suite. Un
+      second test vérifie le port. Les documents périmés sont dans
+      `docs/hackathon/`, explicitement gelés.
+- [x] **Section « Où regarder »** — six permaliens figés sur un commit, vers
+      la validation des appels d'outils, le dispatcher littéral, la validation
+      de la lettre, le moteur déterministe, la classification de cause avec sa
+      jurisprudence, et les deux tests qui rejettent un modèle tentant de lire
+      `.env`.
+- [x] **Capture et exemples** — `docs/images/interface.png` montre l'interface
+      réelle rendue avec une sortie réelle. `examples/` versionne la réponse
+      complète, la trace isolée et le résultat du corpus local, consultables
+      sans installer Ollama.
 - [x] **Ranger la racine** — douze artefacts d'événement archivés dans
       `docs/hackathon/`, avec un `README.md` qui les déclare gelés et renvoie
       vers l'état réel. `RAG_SPEC.md` et `COMPARAISON_CONCURRENTS.md` passés
@@ -335,10 +334,10 @@ passe sans un mot.
       renommés en `scripts/smoke_*.py`. `chat.py`, `SERPAPI_AGENTS.md` et le
       `.pptx` supprimés. `test_agent.py` reste à la racine : le déplacer dans
       `tests/` casserait `unittest discover` tel que documenté.
-- [ ] **Corriger `demo.sh`** — dépend de `rg` (ripgrep, non installé par
-      défaut) sur un dépôt qui vend « zéro dépendance » ; `open` est macOS sous
-      `set -euo pipefail` ; `.venv` exigé alors que le code est stdlib ;
-      `DEMO_NO_OPEN` non documenté.
+- [x] **`demo.sh` portable** — ripgrep remplacé par grep, ouverture du
+      navigateur couvrant macOS, Linux et WSL sans faire échouer le script,
+      venv rendu facultatif, variables documentées. Vérifié avec
+      `/usr/bin/python3`, sans venv ni ripgrep.
 - [ ] **README en anglais + `README.fr.md`** — `WRITEUP_KAGGLE.md` est déjà un
       meilleur document de présentation. **Supprimer la colonne « Commission
       0 % »** : annoncer 0 % en exigeant Ollama, 8 Go de modèle et un compte
