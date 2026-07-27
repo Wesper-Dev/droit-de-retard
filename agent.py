@@ -1078,9 +1078,16 @@ def _allowed_claim_urls(research: dict[str, Any]) -> set[str]:
     channel = research.get("claim_channel") or {}
     if channel.get("channel"):
         allowed.add(channel["channel"])
-    for entry in channel.get("results") or []:
-        if isinstance(entry, dict) and entry.get("link"):
-            allowed.add(entry["link"])
+    # `results` n'est filtré par l'allow-list de domaines que sous le statut
+    # `online`. Sous `unverified_channel` et `no_official_match`, il porte les
+    # résultats bruts du moteur de recherche — précisément ceux que le filtre
+    # vient d'écarter, et que la publicité fait dominer par les intermédiaires à
+    # commission. Les verser ici rendait la lettre libre de citer AirHelp alors
+    # que le canal, lui, avait bien été refusé.
+    if channel.get("status") == "online":
+        for entry in channel.get("results") or []:
+            if isinstance(entry, dict) and entry.get("link"):
+                allowed.add(entry["link"])
     policy = research.get("airline_policy") or {}
     for procedure in policy.get("procedures") or []:
         if procedure.get("channel_url"):

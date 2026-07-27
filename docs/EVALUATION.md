@@ -8,7 +8,7 @@ Dernière vérification : 27 juillet 2026.
 
 ## Suite de tests
 
-Le dépôt compte **106** tests déterministes.
+Le dépôt compte **108** tests déterministes.
 
 ```bash
 python3 -m unittest discover -v

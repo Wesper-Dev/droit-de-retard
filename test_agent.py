@@ -989,6 +989,64 @@ class ClaimValidationTests(unittest.TestCase):
 
         self.assertTrue(any("airhelp" in violation for violation in violations))
 
+    def test_rejected_channel_results_never_become_citable(self):
+        """Deux correctifs se neutralisaient l'un l'autre.
+
+        `find_claim_channel` refuse un canal qui ne vient pas d'un domaine
+        officiel, mais renvoie quand même les résultats bruts sous
+        `no_official_match` — et la liste blanche des URL citables les versait
+        dans l'ensemble autorisé. La lettre pouvait donc citer un intermédiaire
+        à commission alors que le canal avait été rejeté.
+        """
+        research = {
+            "rights": {"sources": []},
+            "claim_channel": {
+                "status": "no_official_match",
+                "channel": None,
+                "results": [{"link": "https://www.airhelp.com/fr/"}],
+            },
+            "airline_policy": {},
+        }
+
+        _, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": None,
+                "letter_body": "Déposez sur https://www.airhelp.com/fr/",
+                "checklist": [],
+                "warnings": [],
+            },
+            research,
+            {"status": "not_covered"},
+            {"status": "not_assessed", "amount_eur": None},
+        )
+
+        self.assertTrue(any("airhelp" in violation for violation in violations))
+
+    def test_verified_channel_results_stay_citable(self):
+        research = {
+            "rights": {"sources": []},
+            "claim_channel": {
+                "status": "online",
+                "channel": "https://wwws.airfrance.fr/contact",
+                "results": [{"link": "https://wwws.airfrance.fr/contact"}],
+            },
+            "airline_policy": {},
+        }
+
+        _, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": None,
+                "letter_body": "Déposez sur https://wwws.airfrance.fr/contact",
+                "checklist": [],
+                "warnings": [],
+            },
+            research,
+            {"status": "not_covered"},
+            {"status": "not_assessed", "amount_eur": None},
+        )
+
+        self.assertEqual(violations, [])
+
     def test_faithful_letter_passes_without_violation(self):
         claim, violations = _validate_claim(
             {
