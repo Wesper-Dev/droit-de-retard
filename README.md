@@ -71,7 +71,8 @@ seuils, de la distance, du montant et des branches de sécurité.
 | `docs/hackathon/` | Archive figée de juillet 2026, non maintenue |
 
 L'état des travaux et la dette restante sont suivis dans
-[`ROADMAP.md`](ROADMAP.md). Les chiffres mesurés — nombre de tests, latence,
+[`ROADMAP.md`](ROADMAP.md) ; l'architecture visée et son plan de construction
+dans [`docs/ARCHITECTURE_CIBLE.md`](docs/ARCHITECTURE_CIBLE.md). Les chiffres mesurés — nombre de tests, latence,
 couverture — vivent dans [`docs/EVALUATION.md`](docs/EVALUATION.md), qui est
 leur point de vérité unique.
 

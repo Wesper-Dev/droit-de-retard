@@ -10,6 +10,16 @@ jamais un ⚠️ comme acquis sans le reproduire d'abord.
 
 ---
 
+## 0. Vers où on va
+
+Le plan de construction visé — lire de vrais billets, lire des sources
+officielles en ligne, mode hors ligne complet, architecture solide — est dans
+[`docs/ARCHITECTURE_CIBLE.md`](docs/ARCHITECTURE_CIBLE.md), avec cinq fiches de
+conception détaillées dans [`docs/architecture/`](docs/architecture/).
+
+Ce document-ci reste le journal de ce qui est **fait** ; l'autre décrit ce qui
+est **visé**.
+
 ## 1. Où on en est
 
 Le hackathon est terminé. Le projet passe en mode long terme, avec deux
