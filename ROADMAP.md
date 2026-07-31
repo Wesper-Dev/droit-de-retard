@@ -20,6 +20,60 @@ conception détaillées dans [`docs/architecture/`](docs/architecture/).
 Ce document-ci reste le journal de ce qui est **fait** ; l'autre décrit ce qui
 est **visé**.
 
+### Lot 0 — livré le 28 juillet 2026
+
+Cinq commits d'assainissement, plus le filet qui protège les lots suivants.
+
+- **La lettre ne peut plus citer une URL que le filtre venait d'écarter.**
+  `find_claim_channel` ne renvoie plus les résultats bruts du moteur sous ses
+  deux statuts de rejet. Ils ne pouvaient déjà plus être cités — le correctif
+  `b119140` avait fermé la liste blanche — mais `draft_claim` sérialise tout le
+  bloc `research` dans le prompt : le modèle les avait encore sous les yeux au
+  moment de rédiger. Une défense qui tient sur un seul rempart n'en est pas une.
+- **Le garde-fou « zéro dépendance » de la CI ne gardait rien.** Il bâtissait son
+  ensemble de modules « locaux » avec `rglob` sans exclure `.venv/` : les paquets
+  tiers y entraient, donc `requests` et `urllib3` passaient pour des modules du
+  dépôt. Reproduit : un `import requests` ajouté **à la racine**, en plein dans
+  le périmètre déclaré, sortait en code 0. Il balaie désormais tout le dépôt,
+  `.venv/`, `__pycache__/`, `tmp/` et `output/` exclus, et refuse les deux cas.
+- **Témoin de régression.** `RegressionWitnessTests` rejoue le pipeline entier
+  hors ligne et compare 146 chemins de champs à `examples/regression_witness.json`,
+  horloge gelée. Sur cinq régressions discrètes injectées à l'essai, cinq sont
+  détectées et nommées. Limite connue : 29 de ces 146 chemins recopient les
+  réponses du modèle en boîte — sur ceux-là le témoin prouve un passe-plat, pas
+  un calcul.
+- **Branche morte supprimée.** `static/index.html` lisait `step.fallback`, que
+  rien n'a jamais émis. Un test de contrat garde désormais la frontière entre la
+  trace et la page ; sa portée exacte est décrite dans sa docstring.
+- **Documentation remise d'aplomb.** Le pied de lettre, annoncé livré en semaine 8,
+  n'existe pas : retiré du passé, rattaché au lot 6.
+
+~~Restes assumés, à traiter au lot 1 : `claim.source_indices` est requis par le
+schéma, halluciné par le modèle — `[10, 11]` pour deux sources — et lu par
+personne ; les permaliens « Où regarder » du README sont figés sur un commit
+antérieur au durcissement.~~ Traités au lot 1.
+
+### Lot 1 — livré le 31 juillet 2026
+
+- **`claim.source_indices` supprimé.** Le champ était exigé par `CLAIM_SCHEMA`,
+  halluciné par le modèle et lu par personne : exiger d'un modèle un champ que
+  rien ne consomme, c'est fabriquer de l'hallucination obligatoire. Retiré des
+  `properties` et du `required`, retiré de la réponse en boîte du témoin, témoin
+  régénéré avec la commande documentée — 146 chemins deviennent 144, les
+  121 tests restent verts. Les citations `[n]` dans le texte de la lettre et le
+  recoupement d'URL de `_validate_claim` ne passaient pas par ce champ et sont
+  inchangés. `examples/sample_output.json` reste la capture fidèle du run du
+  27 juillet : il contient encore le champ, comme l'état du code à cette date.
+- **Permaliens « Où regarder » ré-ancrés.** Les huit liens pointaient sur
+  `6a0aea5`, antérieur au durcissement `b119140` ; ils pointent désormais sur
+  `b0fcc01`, dernier commit poussé, avec les numéros de ligne recalculés sur ses
+  blobs.
+- **README dédoublé.** `README.md` passe en anglais, `README.fr.md` porte la
+  version française, chacun lie l'autre en tête. Le cadrage honnête du coût
+  déjà en place est conservé : pas de « Commission 0 % » en argument, le
+  prélèvement nul est présenté à côté du coût réel (matériel, installation,
+  suivi) et la comparaison est explicitement bornée aux modèles de service.
+
 ## 1. Où on en est
 
 Le hackathon est terminé. Le projet passe en mode long terme, avec deux
@@ -28,7 +82,9 @@ objectifs : **une vitrine GitHub crédible**, et l'évaluation honnête d'une
 
 État réel du code : extraction multimodale Gemma 4 en JSON strict, function
 calling natif Ollama à trois outils, moteur EU261 déterministe (61 aéroports),
-corpus procédural local de 3 compagnies, dictée vocale locale, 106 tests.
+corpus procédural local de 3 compagnies, dictée vocale locale. Le compte de
+tests n'est pas repris ici — il avait déjà dérivé : il fait foi dans
+[`docs/EVALUATION.md`](docs/EVALUATION.md), seul document qu'un test verrouille.
 Dépôt personnel : `github.com/Wesper-Dev/droit-de-retard`.
 
 ---
@@ -320,7 +376,7 @@ passe sans un mot.
 - [x] **`LICENSE` Apache-2.0 + `NOTICE`** — sans licence, « tous droits
       réservés » : personne ne peut forker. Le `NOTICE` reprend les Gemma Terms
       of Use, le modèle n'étant pas sous Apache.
-- [x] **`.github/workflows/tests.yml`** (badge à ajouter au README) — la suite tourne en 0,04 s,
+- [x] **`.github/workflows/tests.yml`** (badge en tête du README) — la suite tourne en 0,04 s,
       sans réseau ni Ollama ni dépendance. Matrice 3.10 → 3.13, ce qui tranche
       au passage l'affirmation jamais vérifiée du README. Un seul badge.
 - [x] **Réconcilier les chiffres** — `docs/EVALUATION.md` est le point de
@@ -348,10 +404,11 @@ passe sans un mot.
       navigateur couvrant macOS, Linux et WSL sans faire échouer le script,
       venv rendu facultatif, variables documentées. Vérifié avec
       `/usr/bin/python3`, sans venv ni ripgrep.
-- [ ] **README en anglais + `README.fr.md`** — `WRITEUP_KAGGLE.md` est déjà un
-      meilleur document de présentation. **Supprimer la colonne « Commission
-      0 % »** : annoncer 0 % en exigeant Ollama, 8 Go de modèle et un compte
-      SerpApi payant est la phrase la plus attaquable du dépôt.
+- [x] **README en anglais + `README.fr.md`** — fait au lot 1 : `README.md` en
+      anglais, `README.fr.md` en miroir, liens croisés en tête. La colonne
+      « Commission 0 % » n'existe plus en tant qu'argument : le prélèvement nul
+      est affiché à côté du coût réel (matériel, installation, suivi du
+      dossier) et la comparaison est bornée aux modèles de service.
 - [x] `Droit_de_Retard_Pitch.pptx` supprimé — binaire de 66 Ko, seul artefact
       dont la titularité était ambiguë.
 
@@ -435,10 +492,19 @@ réelle, zéro affirmation contredite par son propre code.*
 | --- | --- |
 | 5-6 | ~~`eval/cases.yaml`~~ **fait** : `eval/incident_cases.json` (31 cas, JSON et non YAML pour préserver le zéro-dépendance) et `eval/corpus.py`, appliqués par la CI. Trois bugs trouvés à la première exécution, dont l'aplatissement de la cause qui neutralisait la qualification §3.3 |
 | 7 | §3.2 validation du montant de la lettre. §4.6 + §4.7 allow-list et `carriers.json` |
-| 8 | §4.4 contrat d'erreur, §4.8 `Host` et `Content-Type`, §4.9 fiche périmée. Pied de lettre inséré côté serveur, avec le test qui échoue s'il manque |
+| 8 | §4.4 contrat d'erreur, §4.8 `Host` et `Content-Type`, §4.9 fiche périmée |
 
 *Livrable : un tableau de mesures publié, chiffres mauvais compris, et une
 lettre dont chaque montant est recoupé par le moteur.*
+
+**Retiré de la semaine 8, parce que non livré :** le pied de lettre — mention
+d'assistance automatisée, date, fondement, `RULESET.verified_on` — inséré côté
+Python après `_validate_claim`. Ni le pied ni son test n'existent :
+`grep -n "automatis" agent.py static/index.html` ne renvoie rien. Il passe donc
+en travaux prévus, dans le **lot 6** de
+[`docs/ARCHITECTURE_CIBLE.md`](docs/ARCHITECTURE_CIBLE.md), dont il conditionne
+la sortie de fichiers : distribuer un `lettre.txt` sans mention d'assistance
+automatisée serait pire que ne rien exporter.
 
 **Périmètre à refuser :** « 30 à 50 vrais billets » pour le jeu d'évaluation.
 C'est du PII à anonymiser sans casser la mise en page, ce sera commencé et
@@ -452,7 +518,7 @@ minute à écrire chacune.
 | 9 | §3.3 `cause_risk` câblé, jurisprudence citée dans le code, dix tests |
 | 10 | Angles morts signalés, puis branche annulation : art. 5(1)(c), réduction de 50 % de l'art. 7(2), `cancellation_notice_days` |
 | 11 | Branche refus d'embarquement (art. 4), distinction involontaire / volontaire. §4.10 vraisemblance de date |
-| 12 | `ingest.py` + `llm.py` extraits, `agent.py` en façade. `eval/baseline_monoprompt.py` — le chiffre que `WRITEUP_KAGGLE.md` annonce lui-même comme manquant. README anglais |
+| 12 | `ingest.py` + `llm.py` extraits, `agent.py` en façade. `eval/baseline_monoprompt.py` — le chiffre que `WRITEUP_KAGGLE.md` annonce lui-même comme manquant. ~~README anglais~~ (fait au lot 1) |
 
 *Livrable : un moteur qui traite trois cas EU261 sur quatre avec la cause
 modélisée, un harnais qui le prouve, et un dépôt où « le calcul juridique est
