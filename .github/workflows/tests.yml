@@ -35,16 +35,27 @@ jobs:
           import ast, pathlib, sys
 
           STDLIB = set(sys.stdlib_module_names)
+          # Ces répertoires ne sont pas versionnés. Les balayer retournerait le
+          # contrôle contre lui-même : `.venv` héberge les paquets tiers, donc
+          # « requests » y devient un nom de module local et l'import interdit
+          # passerait inaperçu. Le filtre porte sur les composants du chemin
+          # pour attraper aussi un environnement imbriqué.
+          EXCLUS = {".git", ".venv", "__pycache__", "tmp", "output"}
+          SOURCES = [
+              path
+              for path in sorted(pathlib.Path().rglob("*.py"))
+              if EXCLUS.isdisjoint(path.parts)
+          ]
           # Tout module du dépôt est local : on ne code aucune liste en dur,
           # sinon le contrôle casse au premier fichier ajouté. Les paquets
           # comptent aussi — un dossier portant un __init__.py est importable
           # sous son nom de dossier, qui n'apparaît dans aucun nom de fichier.
-          LOCAL = {path.stem for path in pathlib.Path().rglob("*.py")}
+          LOCAL = {path.stem for path in SOURCES}
           LOCAL |= {
-              init.parent.name for init in pathlib.Path().rglob("__init__.py")
+              path.parent.name for path in SOURCES if path.name == "__init__.py"
           }
           faulty = []
-          for path in sorted(pathlib.Path().glob("*.py")):
+          for path in SOURCES:
               tree = ast.parse(path.read_text(encoding="utf-8"))
               for node in ast.walk(tree):
                   if isinstance(node, ast.Import):
