@@ -569,16 +569,20 @@ def find_claim_channel(extracted: dict[str, Any]) -> dict[str, Any]:
     # par les intermédiaires à commission. Publier le premier résultat brut
     # reviendrait à désigner comme canal officiel un service qui prélève 25 à
     # 35 %, dans la lettre que le passager envoie lui-même.
+    # Un statut de rejet ne transporte aucune URL : la charge utile part
+    # entière dans le prompt de rédaction, et y laisser les résultats bruts
+    # revenait à souffler au modèle les adresses que le filtre venait d'écarter.
+    # La liste blanche de sortie les aurait refusées, mais une défense qui
+    # dépend d'un seul rempart n'en est pas une.
     domains = official_domains(airline)
     if not domains:
         return {
             "status": "unverified_channel",
             "channel": None,
-            "results": results,
             "message": (
                 "Transporteur absent du registre local : aucun domaine officiel "
-                "ne peut être confirmé. Les résultats sont donnés à titre "
-                "indicatif et doivent être vérifiés."
+                "ne peut être confirmé. Adresse la demande au transporteur par "
+                "les coordonnées figurant sur ta réservation."
             ),
         }
     official = [
@@ -588,7 +592,6 @@ def find_claim_channel(extracted: dict[str, Any]) -> dict[str, Any]:
         return {
             "status": "no_official_match",
             "channel": None,
-            "results": results,
             "message": (
                 "Aucun résultat ne provient d'un domaine officiel de la "
                 f"compagnie ({', '.join(domains)}). Adresse la demande au "

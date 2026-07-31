@@ -402,13 +402,6 @@
           "note"
         ));
       }
-      if (step.fallback !== undefined) {
-        item.append(element(
-          "p",
-          `Fallback déterministe : ${step.fallback ? "oui" : "non"}`,
-          "note"
-        ));
-      }
       traceList.append(item);
     }
     trace.append(traceList);

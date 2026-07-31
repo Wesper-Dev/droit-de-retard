@@ -9,6 +9,7 @@ gigaoctets de modèle.
 | `sample_output.json` | Réponse complète de `POST /api/analyze` sur le billet de démonstration |
 | `sample_trace.json` | La seule trace d'agent, extraite du fichier ci-dessus |
 | `sample_airline_policy.json` | Sortie de l'outil `retrieve_airline_policy` pour Air France |
+| `regression_witness.json` | Le même scénario, rejoué hors ligne : référence figée du test de non-régression |
 
 ## Scénario
 
@@ -41,6 +42,22 @@ le code IATA `LIS` et ignore le libellé — mais ce nom déformé se retrouve d
 la lettre. C'est exactement le genre de défaut qu'un harnais d'évaluation
 mesurerait, et il n'existe pas encore.
 
+## Le témoin de régression, et pourquoi c'est un fichier distinct
+
+`sample_output.json` vient d'une exécution réelle : mesures de durée au
+centième, résultats SerpApi du jour. Rien de tout cela ne se reproduit à
+l'identique, et le comparer moins ses parties instables aurait fait un trou dans
+l'assertion exactement là où le mode dégradé se décide.
+
+`regression_witness.json` est donc produit autrement : `agent._chat` et
+`tools.web_search` sont remplacés par des réponses figées, l'horloge est gelée
+au 25 juillet 2026, et **tout le reste** est comparé — extraction, décision,
+montant, qualification, remboursement, refus, droit non couvert, lettre et
+trace. Les deux fichiers décrivent le même scénario ; le premier prouve que le
+pipeline tourne pour de vrai, le second qu'il ne change pas sans qu'on le sache.
+
+Il n'est jamais édité à la main : c'est la sortie du pipeline lui-même.
+
 ## Régénérer
 
 ```bash
@@ -48,4 +65,9 @@ mesurerait, et il n'existe pas encore.
 python3 agent.py billet_avion_fictif.png \
   --incident "Le vol est arrivé avec 3 h 25 de retard après un problème technique." \
   --booking-reference FQ7T2K > examples/sample_output.json
+
+# Le témoin, sans Ollama ni réseau — à ne relancer qu'après un écart assumé :
+python3 -c "import json, test_agent as t; \
+  print(json.dumps(t.build_witness(), ensure_ascii=False, indent=2))" \
+  > examples/regression_witness.json
 ```

@@ -145,11 +145,6 @@ CLAIM_SCHEMA: dict[str, Any] = {
             "items": {"type": "string"},
             "maxItems": 6,
         },
-        "source_indices": {
-            "type": "array",
-            "items": {"type": "integer"},
-            "maxItems": 6,
-        },
     },
     "required": [
         "eligibility",
@@ -160,7 +155,6 @@ CLAIM_SCHEMA: dict[str, Any] = {
         "letter_body",
         "checklist",
         "warnings",
-        "source_indices",
     ],
 }
 
@@ -1079,11 +1073,10 @@ def _allowed_claim_urls(research: dict[str, Any]) -> set[str]:
     if channel.get("channel"):
         allowed.add(channel["channel"])
     # `results` n'est filtré par l'allow-list de domaines que sous le statut
-    # `online`. Sous `unverified_channel` et `no_official_match`, il porte les
-    # résultats bruts du moteur de recherche — précisément ceux que le filtre
-    # vient d'écarter, et que la publicité fait dominer par les intermédiaires à
-    # commission. Les verser ici rendait la lettre libre de citer AirHelp alors
-    # que le canal, lui, avait bien été refusé.
+    # `online`. Les statuts de rejet n'en transportent plus, mais la garde reste
+    # : elle rendait la lettre libre de citer AirHelp alors que le canal, lui,
+    # avait bien été refusé, et rien ici ne doit dépendre de la prudence d'un
+    # outil en amont.
     if channel.get("status") == "online":
         for entry in channel.get("results") or []:
             if isinstance(entry, dict) and entry.get("link"):

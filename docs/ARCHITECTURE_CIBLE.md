@@ -15,8 +15,14 @@ vit dans [`../ROADMAP.md`](../ROADMAP.md) ; les chiffres mesurés vivent dans
 > **Avertissement de lecture.** Les constats ci-dessous viennent d'une lecture du
 > code par des agents. Plusieurs affirmations d'audit se sont révélées inexactes
 > au cours de ce projet — et d'autres, exactes et graves. Avant d'agir sur un
-> point, reproduis-le. Le seul défaut de ce rapport vérifié et corrigé à ce jour
-> est le lot 0, la liste blanche d'URL citables.
+> point, reproduis-le.
+>
+> **Le lot 0 est livré (28 juillet 2026)** ; les lots 1 à 9 restent au futur. Les
+> cinq fiches détaillées sont des instantanés d'audit datés du même jour : elles
+> décrivent encore le lot 0 comme à faire, et citent `ROADMAP.md:428` là où la
+> ligne visée était en réalité la 438 — elle a depuis été corrigée, donc ces
+> renvois ne pointent plus rien. Ce qui a réellement été livré, et ce qui a
+> différé du plan, est consigné dans [`../ROADMAP.md`](../ROADMAP.md).
 
 ## Fiches de conception détaillées
 
@@ -50,7 +56,7 @@ Le passager repart avec `lettre.txt`, `dossier.json` réimportable et `suivi.md`
 
 Principe d'ordonnancement, valable pour tout le plan : **on ne construit rien au-dessus d'une couche dont on ne connaît pas le taux d'erreur, et on ne livre pas une fonctionnalité qui pose des questions avant d'avoir un moyen d'y répondre.**
 
-### Lot 0 — Réparer une propriété annoncée qui est fausse, et poser le filet · **une soirée et demie**
+### Lot 0 — ✅ **livré le 28/07/2026** · Réparer une propriété annoncée qui est fausse, et poser le filet
 **Pour l'utilisateur :** aujourd'hui la lettre peut citer comme canal une URL d'intermédiaire à 30 %. `_allowed_claim_urls` (`agent.py:1080-1082`) verse dans l'ensemble citable tous les `channel["results"][].link` — or `find_claim_channel` ne renvoie ce champ que sous `unverified_channel` (`tools.py:571`) et `no_official_match` (`tools.py:585`), c'est-à-dire exactement quand le filtre de domaine officiel a **échoué**, et le commentaire de `tools.py:562-565` dit noir sur blanc que ces résultats sont dominés par les commissionnaires. Après ce lot, la propriété « toute URL citée est vérifiée » redevient vraie.
 **Débloque :** tous les lots suivants réécrivent cette zone ; on part d'un état sain avec les tests de non-régression déjà écrits. Le filet (témoin JSON, CI corrigée) protège les huit lots suivants.
 **Pourquoi ici :** c'est le seul défaut du dépôt qui trompe l'utilisateur *aujourd'hui*, et il se corrige en une dizaine de lignes. Tout le reste peut attendre une semaine, pas ça.
@@ -115,7 +121,15 @@ Lot 0 ──┬─→ Lot 1 ──┬─→ Lot 2 ──┐
 
 ## 3. Le premier lot, détaillé
 
-**Lot 0 — Assainir et poser le filet.** Cinq commits, une soirée et demie. À commencer demain sans rien rouvrir.
+**Lot 0 — Assainir et poser le filet.** Cinq commits, une soirée et demie.
+
+> ✅ **Livré le 28/07/2026**, et conservé ici tel qu'il a été planifié, pour que
+> l'écart entre le plan et l'exécution reste lisible. Trois points ont différé :
+> la moitié `agent.py` du commit 1 était déjà faite (correctif `b119140`) ; le
+> garde-fou CI du commit 2 était **totalement** inopérant, et pas seulement
+> aveugle aux sous-répertoires ; et `examples/sample_output.json` s'est révélé
+> non reproductible hors ligne, d'où une référence dédiée pour le commit 4. Le
+> détail de ce qui a été livré est dans [`../ROADMAP.md`](../ROADMAP.md).
 
 ### Commit 1 — Refermer la fuite de la liste blanche d'URL
 *Fichiers : `agent.py`, `tools.py`, `test_agent.py`*
@@ -225,6 +239,6 @@ Le projet est « fini et présentable » quand ces onze assertions sont vérifia
 
 **Vérifiable dans les documents publiés**
 10. `docs/EVALUATION.md` porte deux tableaux datés : « Types d'incident chiffrés : **4 sur 4** » (ligne 116, aujourd'hui « 1 sur 4 ») et un taux d'exactitude **par champ et par classe de source**, avec le **taux d'erreur silencieuse** — la case aujourd'hui déclarée vide en ligne 125. Le chiffre publié peut être mauvais ; il ne peut pas être absent.
-11. Aucune ligne de `README.md` ou `ROADMAP.md` n'annonce une capacité que `grep` ne trouve pas dans le code — le contre-exemple actuel étant `ROADMAP.md:428`.
+11. Aucune ligne de `README.md` ou `ROADMAP.md` n'annonce une capacité que `grep` ne trouve pas dans le code. Le contre-exemple du jour de l'audit — le pied de lettre annoncé livré en semaine 8 — a été retiré par le lot 0 ; ce critère se re-vérifie à chaque lot, il ne se coche pas une fois.
 
 **Le test de la thèse, à passer une fois avant de déclarer fini :** débrancher Ollama et vérifier que le verdict, le montant, le fondement juridique et l'adresse d'envoi restent identiques, seule la prose disparaissant au profit d'un gabarit. Si c'est vrai, alors le modèle n'a effectivement jamais décidé — et c'est la seule affirmation du dépôt qui mérite d'être mise en avant.

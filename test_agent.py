@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 import datetime
 import io
+import json
 import pathlib
 import re
 import unittest
@@ -989,14 +990,65 @@ class ClaimValidationTests(unittest.TestCase):
 
         self.assertTrue(any("airhelp" in violation for violation in violations))
 
-    def test_rejected_channel_results_never_become_citable(self):
-        """Deux correctifs se neutralisaient l'un l'autre.
+    def test_unverified_channel_letter_cannot_cite_an_intermediary(self):
+        """Canal refusé faute de domaine connu : rien du moteur n'est citable."""
+        research = {
+            "rights": {"sources": []},
+            "claim_channel": {
+                "status": "unverified_channel",
+                "channel": None,
+                "message": "Transporteur absent du registre local.",
+            },
+            "airline_policy": {},
+        }
 
-        `find_claim_channel` refuse un canal qui ne vient pas d'un domaine
-        officiel, mais renvoie quand même les résultats bruts sous
-        `no_official_match` — et la liste blanche des URL citables les versait
-        dans l'ensemble autorisé. La lettre pouvait donc citer un intermédiaire
-        à commission alors que le canal avait été rejeté.
+        _, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": None,
+                "letter_body": "Déposez sur https://www.airhelp.com/fr/",
+                "checklist": [],
+                "warnings": [],
+            },
+            research,
+            {"status": "not_covered"},
+            {"status": "not_assessed", "amount_eur": None},
+        )
+
+        self.assertTrue(any("airhelp" in violation for violation in violations))
+
+    def test_no_official_match_letter_cannot_cite_an_intermediary(self):
+        """Même refus quand le registre existe mais qu'aucun résultat n'en vient."""
+        research = {
+            "rights": {"sources": []},
+            "claim_channel": {
+                "status": "no_official_match",
+                "channel": None,
+                "message": "Aucun résultat ne provient d'un domaine officiel.",
+            },
+            "airline_policy": {},
+        }
+
+        _, violations = _validate_claim(
+            {
+                "estimated_compensation_eur": None,
+                "letter_body": "Déposez sur https://www.flightright.fr/air-france",
+                "checklist": [],
+                "warnings": [],
+            },
+            research,
+            {"status": "not_covered"},
+            {"status": "not_assessed", "amount_eur": None},
+        )
+
+        self.assertTrue(any("flightright" in violation for violation in violations))
+
+    def test_rejected_channel_results_never_become_citable(self):
+        """Second rempart, sur une charge utile que `tools` n'émet plus.
+
+        Les statuts de rejet ne transportent plus de résultats bruts, mais la
+        liste blanche ne doit pas dépendre de cette discipline en amont : un
+        dossier rejoué, ou un outil futur moins prudent, ne doit pas rouvrir la
+        porte à un intermédiaire à commission que le filtre avait écarté.
         """
         research = {
             "rights": {"sources": []},
@@ -1403,6 +1455,29 @@ class ClaimChannelAllowListTests(unittest.TestCase):
         self.assertEqual(result["status"], "unverified_channel")
         self.assertIsNone(result["channel"])
 
+    @patch("tools.web_search")
+    def test_rejection_payload_carries_no_url_at_all(self, search):
+        """La charge utile part entière dans le prompt de rédaction.
+
+        Y laisser les résultats écartés reviendrait à souffler au modèle les
+        adresses que le filtre vient de refuser ; la liste blanche de sortie les
+        bloquerait, mais une défense à un seul rempart n'en est pas une.
+        """
+        search.return_value = [
+            {"title": "AirHelp", "link": "https://www.airhelp.com/fr/"},
+            {"title": "Flightright", "link": "https://www.flightright.fr/"},
+        ]
+
+        for airline, status in (
+            ("Ryanair", "unverified_channel"),
+            ("Air France", "no_official_match"),
+        ):
+            result = find_claim_channel({"airline": airline})
+
+            self.assertEqual(result["status"], status, airline)
+            self.assertNotIn("results", result)
+            self.assertNotIn("http", json.dumps(result, ensure_ascii=False))
+
 
 class PolicyFreshnessTests(unittest.TestCase):
     def test_stale_sheet_withholds_its_steps(self):
@@ -1561,6 +1636,124 @@ class DocumentedFiguresTests(unittest.TestCase):
         self.assertIn(f"**{default_port.group(1)}**", documented)
 
 
+class BrowserContractTests(unittest.TestCase):
+    """L'interface ne doit lire que des champs que le serveur émet vraiment.
+
+    Un champ jamais émis ne casse rien à l'écran : la condition qui le teste
+    est simplement toujours fausse, et le bloc d'affichage survit des mois
+    sans que personne le remarque. Les deux inventaires sont donc dérivés du
+    code, jamais recopiés à la main : c'est l'écart entre le JavaScript et le
+    Python qui doit faire échouer, pas une liste figée dans ce fichier.
+
+    Portée exacte, à ne pas surestimer : ce contrat couvre la **frontière**
+    entre le serveur et la page — les clés lues directement sur `step` et sur
+    `data` — et non l'intérieur des blocs qu'elle laisse passer. `_browser_reads`
+    dit quelles formes lui échappent, et il y en a de bien réelles.
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent
+
+    def _browser_reads(self, variable: str, source: str | None = None) -> set[str]:
+        """Les clés lues directement sur `variable` : `x.clé` et `x["clé"]`.
+
+        Trois formes restent invisibles, et elles existent aujourd'hui dans la
+        page : l'alias (`const decision = data.decision;` puis `decision.status`,
+        l. 413), la clé calculée (`data.extraction[key]` dans une boucle sur
+        `Object.entries`, l. 488), et la traversée imbriquée
+        (`data.research.claim_channel`, l. 522). Élargir la regex à ces cas
+        reviendrait à écrire un analyseur JavaScript ; le vrai remède est un
+        rendu piloté par un schéma, qui relève du lot 8. En attendant, ce test
+        garde la frontière, ce qui est déjà ce par quoi une clé morte entre.
+        """
+        if source is None:
+            source = (self.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        # Le point interdit avant le nom écarte `event.data.size`, qui désigne
+        # un morceau d'enregistrement audio et non une réponse du serveur.
+        dotted = re.findall(rf"(?<![\w.$]){variable}\.([a-zA-Z_]+)", source)
+        bracketed = re.findall(
+            rf"(?<![\w.$]){variable}\[[\"']([a-zA-Z_]+)[\"']\]", source
+        )
+        return set(dotted) | set(bracketed)
+
+    def test_both_direct_access_forms_are_seen(self):
+        """`step["x"]` doit compter autant que `step.x`.
+
+        Sans quoi il suffirait d'écrire la lecture avec des crochets pour
+        qu'une clé morte traverse le contrat sans être vue.
+        """
+        source = 'step.pointe; step["crochets"]; event.data.size; autre.step.exclu;'
+
+        self.assertEqual(
+            self._browser_reads("step", source), {"pointe", "crochets"}
+        )
+
+    def test_trace_fields_read_by_the_page_are_all_emitted(self):
+        """Les étapes de trace dépendent du chemin suivi par le dossier.
+
+        Rejouer un scénario ne prouverait donc rien sur les branches non
+        empruntées : on relit tous les littéraux d'étape de `agent.py`, ce qui
+        couvre l'union des traces possibles.
+        """
+        source = (self.ROOT / "agent.py").read_text(encoding="utf-8")
+        emitted: set[str] = set()
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.Dict):
+                continue
+            literal = {
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            if {"step", "outcome"} <= literal:
+                emitted |= literal
+
+        self.assertTrue(emitted, "plus aucun littéral d'étape reconnu dans agent.py")
+        self.assertEqual(
+            sorted(self._browser_reads("step") - emitted),
+            [],
+            "l'interface lit un champ d'étape que la trace ne produit jamais",
+        )
+
+    @patch("agent.extract_flight")
+    def test_payload_fields_read_by_the_page_are_all_emitted(self, extract_flight):
+        """La charge utile de premier niveau, elle, est complète dès sa
+        construction : un dossier incomplet suffit à l'observer en vrai,
+        ce qui vaut mieux qu'une relecture syntaxique.
+        """
+        extract_flight.return_value = (
+            {
+                **COMPLETE_FLIGHT,
+                "disruption_type": "unknown",
+                "delay_minutes": None,
+            },
+            1.0,
+        )
+        emitted = set(process(pathlib.Path("unused.pdf")))
+        # La transcription et les erreurs répondent sans passer par `process` :
+        # leurs charges utiles littérales complètent la source de vérité.
+        server = (self.ROOT / "app.py").read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(server)):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "_send_json"
+            ):
+                for argument in node.args:
+                    if isinstance(argument, ast.Dict):
+                        emitted |= {
+                            key.value
+                            for key in argument.keys
+                            if isinstance(key, ast.Constant)
+                            and isinstance(key.value, str)
+                        }
+
+        self.assertEqual(
+            sorted(self._browser_reads("data") - emitted),
+            [],
+            "l'interface lit un champ de réponse que le serveur n'envoie jamais",
+        )
+
+
 class ClaimSchemaTests(unittest.TestCase):
     def test_every_array_is_bounded(self):
         """Un tableau sans maxItems laisse le décodage contraint boucler.
@@ -1708,6 +1901,452 @@ class LocalAirlinePolicyTests(unittest.TestCase):
         self.assertFalse(parameters["additionalProperties"])
         self.assertEqual(set(parameters["required"]), {"airline", "incident"})
         self.assertIn("flight_delay", parameters["properties"]["incident"]["enum"])
+
+
+# Le témoin de régression rejoue le scénario de démonstration en substituant les
+# deux seules frontières non déterministes du pipeline : le modèle
+# (`agent._chat`) et le réseau (`tools.web_search`). Tout ce qui se trouve entre
+# les deux — extraction, routage, sélection d'outils, filtrage des sources,
+# qualification, remboursement, validation de la lettre, trace — reste dans la
+# surface comparée. Mocker `verify_air_passenger_rule` en entier aurait sorti le
+# filtre de sources officielles du champ de vision ; comparer `sample_output.json`
+# moins des exclusions aurait fait un trou exactement là où le mode dégradé se
+# décide, et six lots de refactor auraient pu le franchir sans bruit.
+WITNESS_DOCUMENT = "billet_avion_fictif.png"
+WITNESS_INCIDENT = (
+    "Le vol est arrivé avec 3 h 25 de retard après un problème technique."
+)
+WITNESS_BOOKING_REFERENCE = "FQ7T2K"
+
+# Avant le 14 septembre 2026, donc `check_flight_date` conclut `implausible`.
+# Sans ce gel, le filet censé protéger six lots de refactor virerait au rouge le
+# jour du vol de démonstration, sans qu'une ligne de code ait bougé.
+WITNESS_TODAY = datetime.date(2026, 7, 25)
+
+
+class _WitnessDate(datetime.date):
+    """Horloge du témoin, figée à `WITNESS_TODAY`."""
+
+    frozen = WITNESS_TODAY
+
+    @classmethod
+    def today(cls):
+        return cls.frozen
+
+
+# Sortie brute de Gemma sur le billet, telle qu'observée : « LIONNONE LIS » au
+# lieu de « LISBONNE LIS ». Le défaut de lecture est conservé volontairement. Le
+# témoin fige ce que le pipeline fait, pas ce qu'on voudrait qu'il fasse, et ce
+# libellé déformé se propage jusqu'aux arguments d'outils : le jour où le lot 1
+# le corrigera, c'est ce fichier qui devra bouger, sciemment.
+WITNESS_EXTRACTION_RESPONSE = {
+    "message": {
+        "content": json.dumps(
+            {
+                "document_type": "boarding_pass",
+                "passenger_name": "MARTIN LEA",
+                "airline": "AURORA AIRLINES",
+                "flight_number": "AU 3127",
+                "origin": "PARIS CDG",
+                "destination": "LIONNONE LIS",
+                "departure_date": "2026-09-14",
+                "scheduled_departure": "09:25",
+                "scheduled_arrival": None,
+                "actual_arrival": None,
+                "boarding_time": "08:55",
+                "booking_reference": "FQ7T2K",
+                "seat": "14C",
+                "gate": "B7",
+                "disruption_type": "unknown",
+                "delay_minutes": None,
+                "arrival_delay_minutes": None,
+                "departure_delay_minutes": None,
+                "trip_completed": None,
+                "disruption_cause": None,
+                "evidence": [
+                    "Date: 14 SEPT. 2026",
+                    "Heure: 09:25",
+                    "Vol: AU 3127",
+                ],
+                "uncertain_fields": ["scheduled_arrival"],
+            },
+            ensure_ascii=False,
+        )
+    }
+}
+
+# Un outil par tour : c'est ce que fait le modèle en vrai, et c'est le seul
+# scénario qui exerce les allers-retours de résultats vers le prompt. Les
+# arguments sont écrits en dur plutôt que dérivés de `_expected_tool_arguments`,
+# sinon la validation stricte se comparerait à elle-même.
+WITNESS_TOOL_RESPONSES = [
+    {
+        "message": {
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "verify_air_passenger_rule",
+                        "arguments": {
+                            "disruption_type": "delay",
+                            "origin": "PARIS CDG",
+                            "destination": "LIONNONE LIS",
+                            "arrival_delay_minutes": 205,
+                            "departure_delay_minutes": None,
+                        },
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "message": {
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "find_claim_channel",
+                        "arguments": {"airline": "AURORA AIRLINES"},
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "message": {
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "retrieve_airline_policy",
+                        "arguments": {
+                            "airline": "AURORA AIRLINES",
+                            "incident": "flight_delay",
+                        },
+                    }
+                }
+            ]
+        }
+    },
+]
+
+WITNESS_CLAIM_RESPONSE = {
+    "message": {
+        "content": json.dumps(
+            {
+                "eligibility": "likely",
+                "summary": (
+                    "Le vol AU 3127 a subi un retard de 205 minutes (3h25) à "
+                    "l'arrivée à Lisbonne. Ce retard dépasse le seuil de 3 "
+                    "heures, ce qui ouvre droit à une indemnisation forfaitaire "
+                    "selon le règlement EU261."
+                ),
+                "estimated_compensation_eur": 250,
+                "reasoning": [
+                    "Le retard constaté est de 205 minutes "
+                    "[INDEMNISATION_EU261].",
+                    "La distance du vol (1470.2 km) et la durée du retard "
+                    "permettent d'envisager une indemnisation forfaitaire "
+                    "[INDEMNISATION_EU261].",
+                    "Bien qu'un problème technique soit mentionné, cette cause "
+                    "déclarée n'exonère en principe pas le transporteur de son "
+                    "obligation d'indemnisation [INDEMNISATION_EU261].",
+                ],
+                "letter_subject": (
+                    "Réclamation pour retard de vol - Vol AU 3127 du 14/09/2026"
+                ),
+                "letter_body": (
+                    "Madame, Monsieur,\n\nJe vous contacte concernant mon "
+                    "voyage sur le vol AU 3127 en provenance de Paris (CDG) à "
+                    "destination de Lisbonne (LIS) le 14 septembre 2026 "
+                    "(Référence de réservation : FQ7T2K).\n\nMon vol est arrivé "
+                    "avec un retard de 205 minutes. En raison de ce retard "
+                    "supérieur à trois heures sur un trajet de cette distance, "
+                    "je sollicite une indemnisation forfaitaire conformément au "
+                    "règlement européen applicable [INDEMNISATION_EU261].\n\n"
+                    "Dans l'attente de votre retour,\n\nCordialement,\n\n"
+                    "MARTIN LEA"
+                ),
+                "checklist": ["Adresser la demande au transporteur."],
+                "warnings": [],
+            },
+            ensure_ascii=False,
+        )
+    }
+}
+
+WITNESS_CHAT_RESPONSES = [
+    WITNESS_EXTRACTION_RESPONSE,
+    *WITNESS_TOOL_RESPONSES,
+    WITNESS_CLAIM_RESPONSE,
+]
+
+# Réponse SerpApi figée. Le troisième résultat est un intermédiaire à commission
+# que `_filter_official_rule_sources` doit écarter : le témoin échouerait si un
+# refactor rouvrait la lettre à ces adresses.
+WITNESS_SEARCH_RESULTS = [
+    {
+        "title": "Droits des passagers aériens - Your Europe",
+        "link": (
+            "https://europa.eu/youreurope/citizens/travel/passenger-rights/"
+            "air/index_fr.htm"
+        ),
+        "snippet": (
+            "Ces droits sont proportionnels à la durée du retard et à la "
+            "distance du vol."
+        ),
+    },
+    {
+        "title": "FAQ|Droits des passagers aériens - Your Europe",
+        "link": (
+            "https://europa.eu/youreurope/citizens/travel/passenger-rights/"
+            "air/faq/index_fr.htm"
+        ),
+        "snippet": (
+            "Si votre vol a deux heures de retard ou plus au départ, la "
+            "compagnie aérienne doit vous offrir une assistance."
+        ),
+    },
+    {
+        "title": "Indemnisation vol retardé",
+        "link": "https://www.airhelp.com/fr/",
+        "snippet": "Réclamez jusqu'à 600 € par passager.",
+    },
+]
+
+
+def replay_witness_pipeline(today: datetime.date = WITNESS_TODAY) -> dict:
+    """Rejoue le pipeline de démonstration hors ligne, horloge gelée."""
+    root = pathlib.Path(__file__).resolve().parent
+
+    class FrozenDate(_WitnessDate):
+        frozen = today
+
+    with patch("agent._chat", side_effect=list(WITNESS_CHAT_RESPONSES)), patch(
+        "tools.web_search", return_value=list(WITNESS_SEARCH_RESULTS)
+    ), patch("agent.date", FrozenDate):
+        return process(
+            root / WITNESS_DOCUMENT,
+            WITNESS_INCIDENT,
+            confirmed_booking_reference=WITNESS_BOOKING_REFERENCE,
+        )
+
+
+def witness_comparable(value, key: str | None = None):
+    """Neutralise les deux valeurs qui ne se reproduisent jamais à l'identique.
+
+    `duration_seconds` est une mesure d'horloge murale : 10,69 s derrière un
+    vrai Ollama, 0,0 s ici, et 0,01 s le jour où le runner d'intégration est
+    chargé — un témoin qui la compare mesure la machine, pas le code. `document`
+    porte un chemin absolu propre au poste. Rien d'autre n'est neutralisé : un
+    témoin qui compare trois champs est pire qu'inutile, il donne une fausse
+    sécurité pendant six lots de refactor.
+    """
+    if isinstance(value, dict):
+        return {
+            name: witness_comparable(item, name) for name, item in value.items()
+        }
+    if isinstance(value, list):
+        return [witness_comparable(item) for item in value]
+    if key == "duration_seconds":
+        return 0
+    if key == "document":
+        return pathlib.PurePath(str(value)).name
+    return value
+
+
+def witness_paths(value, prefix: str = ""):
+    """Aplatit un document JSON en chemins pointés, feuilles comprises.
+
+    Un conteneur vide est sa propre feuille, sinon la disparition du dernier
+    élément d'une liste passerait pour une absence de chemin des deux côtés.
+    """
+    if isinstance(value, dict) and value:
+        for name, item in value.items():
+            yield from witness_paths(item, f"{prefix}.{name}" if prefix else name)
+    elif isinstance(value, list) and value:
+        for index, item in enumerate(value):
+            yield from witness_paths(item, f"{prefix}[{index}]")
+    else:
+        yield prefix, value
+
+
+def build_witness() -> dict:
+    """Le témoin tel qu'il est versionné : la sortie réelle, forme comparée.
+
+    Le fichier de référence n'est jamais écrit à la main. Le versionner sous sa
+    forme neutralisée évite d'y figer un chemin absolu et des mesures d'horloge
+    qu'aucune relecture ne pourrait valider.
+    """
+    return witness_comparable(replay_witness_pipeline())
+
+
+def _witness_extract(value) -> str:
+    """Repr tronquée : la lettre fait 900 caractères, l'écart en fait vingt."""
+    rendered = repr(value)
+    return rendered if len(rendered) <= 110 else rendered[:107] + "..."
+
+
+def _witness_gap(expected, produced) -> str:
+    """Situe l'écart de deux textes longs, au lieu de les tronquer par la gauche.
+
+    Deux lettres qui divergent au 600e caractère donnent, coupées à 110, deux
+    extraits rigoureusement identiques : le message d'échec dirait « ceci
+    diffère de cela » en affichant deux fois la même phrase.
+    """
+    plain = f"{_witness_extract(expected)} -> {_witness_extract(produced)}"
+    if not (isinstance(expected, str) and isinstance(produced, str)):
+        return plain
+    if max(len(expected), len(produced)) <= 108:
+        return plain
+    offset = next(
+        (
+            index
+            for index, (left, right) in enumerate(zip(expected, produced))
+            if left != right
+        ),
+        min(len(expected), len(produced)),
+    )
+    start = max(0, offset - 30)
+    return (
+        f"au caractère {offset}, {_witness_extract(expected[start:offset + 50])} "
+        f"-> {_witness_extract(produced[start:offset + 50])}"
+    )
+
+
+def witness_differences(reference, produced) -> list[str]:
+    """Nomme chaque champ qui diverge, plutôt que « les dicts diffèrent »."""
+    expected = dict(witness_paths(reference))
+    actual = dict(witness_paths(produced))
+    differences = []
+    for path in sorted(set(expected) | set(actual)):
+        if path not in actual:
+            differences.append(
+                f"- {path} : disparu (témoin : {_witness_extract(expected[path])})"
+            )
+        elif path not in expected:
+            differences.append(f"+ {path} : apparu ({_witness_extract(actual[path])})")
+        elif expected[path] != actual[path]:
+            gap = _witness_gap(expected[path], actual[path])
+            differences.append(f"~ {path} : {gap}")
+    return differences
+
+
+class RegressionWitnessTests(unittest.TestCase):
+    """Le pipeline complet, rejoué hors ligne et comparé champ par champ.
+
+    Six lots de refactor vont réécrire `agent.py`. Un test qui vérifierait trois
+    clés les laisserait tous passer : la comparaison porte sur le document
+    entier — extraction, décision, montant, qualification, remboursement, refus,
+    droit non couvert, lettre et trace.
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent
+    WITNESS = ROOT / "examples" / "regression_witness.json"
+    REGENERATE = (
+        "python3 -c \"import json, test_agent as t; "
+        "print(json.dumps(t.build_witness(), ensure_ascii=False, indent=2))\" "
+        "> examples/regression_witness.json"
+    )
+
+    def test_pipeline_output_matches_the_frozen_witness(self):
+        reference = json.loads(self.WITNESS.read_text(encoding="utf-8"))
+
+        differences = witness_differences(
+            witness_comparable(reference),
+            witness_comparable(replay_witness_pipeline()),
+        )
+
+        if differences:
+            # `assertEqual` sur deux listes ferait précéder le diff lisible de
+            # son propre diff de listes, illisible sur un dossier de cette
+            # taille. On échoue avec le seul message qui nomme les champs.
+            self.fail(
+                "la sortie du pipeline diverge du témoin :\n"
+                + "\n".join(differences)
+                + "\n\nSi l'écart est voulu, régénérer sciemment :\n"
+                + self.REGENERATE
+            )
+
+    def test_the_witness_pins_every_block_of_the_answer(self):
+        """Un témoin amputé donnerait une fausse sécurité pendant six lots."""
+        reference = json.loads(self.WITNESS.read_text(encoding="utf-8"))
+        covered = {path for path, _ in witness_paths(witness_comparable(reference))}
+
+        for field in (
+            "extraction.flight_number",
+            "extraction.arrival_delay_minutes",
+            "decision.status",
+            "research.rights.status",
+            "qualification.status",
+            "qualification.compensation_eur",
+            "reimbursement.status",
+            "refusal",
+            "uncovered_right",
+            "claim.letter_body",
+            "trace[0].step",
+        ):
+            self.assertIn(field, covered, field)
+
+    def test_replay_never_touches_the_network(self):
+        """Ni Ollama, ni clé SerpApi, ni socket : le filet doit tourner partout.
+
+        `agent.urllib` et `tools.urllib` désignent le même module, donc une
+        seule substitution couvre les deux sorties réseau du dépôt.
+        """
+        with patch("agent.urllib.request.urlopen") as urlopen:
+            replay_witness_pipeline()
+
+        urlopen.assert_not_called()
+
+    def test_the_frozen_clock_is_load_bearing(self):
+        """Le 14 septembre 2026, l'étape de vraisemblance disparaît d'elle-même.
+
+        Sans gel, ce test-ci serait le témoin, et il virerait au rouge ce jour-là
+        sur un dossier inchangé.
+        """
+        before = replay_witness_pipeline()
+        after = replay_witness_pipeline(datetime.date(2026, 9, 15))
+
+        self.assertIn(
+            "check_flight_date", [step["step"] for step in before["trace"]]
+        )
+        self.assertNotIn(
+            "check_flight_date", [step["step"] for step in after["trace"]]
+        )
+
+    def test_durations_are_neutralised_at_every_depth(self):
+        normalised = witness_comparable(
+            {
+                "duration_seconds": 22.57,
+                "trace": [{"step": "extract_flight", "duration_seconds": 10.69}],
+            }
+        )
+
+        self.assertEqual(normalised["duration_seconds"], 0)
+        self.assertEqual(normalised["trace"][0]["duration_seconds"], 0)
+        self.assertEqual(normalised["trace"][0]["step"], "extract_flight")
+
+    def test_a_divergence_names_the_field_and_both_values(self):
+        differences = witness_differences(
+            {"qualification": {"compensation_eur": 250, "status": "likely"}},
+            {"qualification": {"compensation_eur": 400, "status": "likely"}},
+        )
+
+        self.assertEqual(len(differences), 1)
+        self.assertIn("qualification.compensation_eur", differences[0])
+        self.assertIn("250", differences[0])
+        self.assertIn("400", differences[0])
+
+    def test_a_divergence_inside_a_long_letter_stays_readable(self):
+        """Tronquée par la gauche, une lettre de 900 signes cache son écart."""
+        letter = "Madame, Monsieur, " + "je vous écris. " * 60
+        differences = witness_differences(
+            {"claim": {"letter_body": letter + "250 €."}},
+            {"claim": {"letter_body": letter + "400 €."}},
+        )
+
+        self.assertEqual(len(differences), 1)
+        self.assertIn("claim.letter_body", differences[0])
+        self.assertIn("250", differences[0])
+        self.assertIn("400", differences[0])
 
 
 if __name__ == "__main__":

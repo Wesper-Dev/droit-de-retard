@@ -8,7 +8,7 @@ Dernière vérification : 27 juillet 2026.
 
 ## Suite de tests
 
-Le dépôt compte **108** tests déterministes.
+Le dépôt compte **121** tests déterministes.
 
 ```bash
 python3 -m unittest discover -v
@@ -33,6 +33,33 @@ validation des appels d'outils et celle de la lettre produite.
 Elle ne couvre **pas** la qualité de l'extraction multimodale. Tous les tests
 remplacent `_chat` par un double : ils vérifient donc tout sauf la couche du
 modèle. Voir « Ce qui n'est pas mesuré » plus bas.
+
+### Le témoin de régression
+
+`RegressionWitnessTests` rejoue `process()` de bout en bout sur le billet de
+démonstration et compare la réponse **entière** à `examples/regression_witness.json`,
+champ par champ. Seules deux valeurs sont neutralisées, et pour une raison
+nommée : les `duration_seconds`, qui mesurent la machine, et le chemin absolu du
+document. Le modèle et le réseau sont les deux seules frontières substituées ;
+le filtrage des sources officielles, la sélection d'outils et la validation de
+la lettre restent dans la surface comparée. L'horloge est gelée au 25 juillet
+2026, sans quoi l'étape `check_flight_date` basculerait d'elle-même le
+14 septembre 2026 et le témoin virerait au rouge sur un dossier inchangé.
+
+### Le garde-fou « zéro dépendance » n'a rien vérifié jusqu'au 28/07/2026
+
+La promesse d'absence de dépendance Python est contrôlée par une étape de la CI
+qui analyse les imports par AST. Elle était inopérante depuis son écriture :
+l'ensemble des modules réputés locaux était bâti sur un balayage récursif du
+dépôt **sans exclure `.venv/`**, donc les paquets tiers y entraient et
+`import requests` était reconnu comme local. Reproduit avant correction : un
+`import requests` ajouté à la racine sortait en code 0. Le badge vert de la
+période ne certifiait donc pas ce qu'il paraissait certifier.
+
+C'est corrigé, et le contrôle refuse désormais un import externe aussi bien à la
+racine que dans un sous-répertoire. La promesse elle-même n'a jamais été violée
+— aucune dépendance n'a été introduite — mais elle reposait sur la discipline,
+pas sur la mesure. La distinction compte dans un dépôt qui publie ses chiffres.
 
 ## Corpus de déclarations
 
